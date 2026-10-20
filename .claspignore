@@ -1,0 +1,5 @@
+.git/**
+.docs/**
+tests/**
+.chatgpt.md
+README.txt
