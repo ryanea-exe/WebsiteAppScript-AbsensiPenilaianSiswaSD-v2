@@ -16,9 +16,17 @@
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
+    /* Kustom scrollbar untuk sidebar menu */
+    .custom-scroll::-webkit-scrollbar {
+      width: 4px;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background-color: #cbd5e1;
+      border-radius: 4px;
+    }
   </style>
 </head>
-<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col font-sans antialiased">
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col font-sans antialiased selection:bg-blue-500 selection:text-white">
 
   <!-- ==================================================================== -->
   <!-- TOAST NOTIFICATION CONTAINER -->
@@ -26,20 +34,39 @@
   <div id="toast-container" class="fixed top-5 right-5 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none"></div>
 
   <!-- ==================================================================== -->
+  <!-- MODAL SESI KEDALUWARSA -->
+  <!-- ==================================================================== -->
+  <div id="modal-session-expired" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 text-center animate-in fade-in zoom-in-95 duration-150">
+      <div class="w-12 h-12 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-4">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+        </svg>
+      </div>
+      <h3 class="text-lg font-bold text-slate-900 mb-1">Sesi Telah Berakhir</h3>
+      <p class="text-sm text-slate-500 mb-6" id="modal-expired-message">Sesi Anda telah kedaluwarsa demi keamanan. Silakan login kembali.</p>
+      <button type="button" onclick="acknowledgeSessionExpired()"
+        class="w-full py-2.5 px-4 bg-blue-700 hover:bg-blue-800 text-white font-medium rounded-xl text-sm transition-all shadow-md">
+        Masuk Kembali
+      </button>
+    </div>
+  </div>
+
+  <!-- ==================================================================== -->
   <!-- 1. TAMPILAN LOGIN (Default jika belum ada sesi) -->
   <!-- ==================================================================== -->
-  <div id="view-login" class="flex-1 flex items-center justify-center p-4">
+  <div id="view-login" class="flex-1 flex items-center justify-center p-4 min-h-screen bg-slate-50">
     <div class="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden">
       <!-- Header Card -->
       <div class="bg-gradient-to-r from-blue-700 to-indigo-800 p-8 text-center text-white">
-        <div class="inline-flex items-center justify-center w-16 h-16 bg-white/10 rounded-2xl backdrop-blur-md mb-4 border border-white/20">
+        <div class="inline-flex items-center justify-center w-16 h-16 bg-white/10 rounded-2xl backdrop-blur-md mb-4 border border-white/20 shadow-inner">
           <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14l9-5-9-5-9 5 9 5z"></path>
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z"></path>
           </svg>
         </div>
         <h1 class="text-2xl font-bold tracking-tight">Sistem Absensi &amp; Rapor SD</h1>
-        <p class="text-blue-100 text-sm mt-1">Portal Internal Sekolah — Versi 2</p>
+        <p class="text-blue-100 text-sm mt-1" id="login-school-name">Portal Internal Sekolah — Versi 2</p>
       </div>
 
       <!-- Form Login -->
@@ -87,77 +114,340 @@
         </button>
 
         <p class="text-center text-xs text-slate-400 pt-2">
-          Hanya untuk Kepala Sekolah &amp; Wali Kelas yang telah terdaftar.
+          Akses terbatas untuk Kepala Sekolah &amp; Wali Kelas terdaftar.
         </p>
       </form>
     </div>
   </div>
 
   <!-- ==================================================================== -->
-  <!-- 2. TAMPILAN DASHBOARD SHELL (Setelah login berhasil) -->
+  <!-- 2. TAMPILAN APP SHELL (Setelah login berhasil) -->
   <!-- ==================================================================== -->
-  <div id="view-app-shell" class="hidden flex-1 flex flex-col">
-    <!-- Navbar Header -->
-    <header class="bg-white border-b border-slate-200 sticky top-0 z-40">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-xl bg-blue-700 text-white flex items-center justify-center font-bold text-lg shadow-sm">
-            SD
+  <div id="view-app-shell" class="hidden min-h-screen flex flex-row bg-slate-100">
+
+    <!-- Mobile Drawer Backdrop -->
+    <div id="mobile-drawer-backdrop" onclick="toggleMobileDrawer(false)"
+      class="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-sm hidden md:hidden transition-opacity"></div>
+
+    <!-- SIDEBAR (Desktop: sticky, Mobile: slide-over drawer) -->
+    <aside id="app-sidebar"
+      class="fixed md:sticky top-0 left-0 z-50 h-screen w-64 bg-white border-r border-slate-200 flex flex-col justify-between transform -translate-x-full md:translate-x-0 transition-transform duration-200 ease-in-out shadow-sm md:shadow-none">
+
+      <!-- Top Branding Section -->
+      <div>
+        <div class="h-16 px-5 border-b border-slate-100 flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-xl bg-blue-700 text-white flex items-center justify-center font-bold text-sm shadow-sm flex-shrink-0">
+              SD
+            </div>
+            <div class="overflow-hidden">
+              <h2 id="sidebar-school-title" class="font-bold text-slate-900 text-sm truncate leading-tight">SD Negeri</h2>
+              <p class="text-[11px] text-slate-400 font-medium">Absensi &amp; Rapor v2</p>
+            </div>
           </div>
-          <div>
-            <h2 class="font-bold text-slate-900 leading-tight text-base sm:text-lg">Sistem Absensi &amp; Rapor</h2>
-            <p class="text-xs text-slate-500 hidden sm:block">Aplikasi Pengelolaan Nilai &amp; Kehadiran Siswa</p>
+          <!-- Close button on mobile -->
+          <button type="button" onclick="toggleMobileDrawer(false)"
+            class="md:hidden p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Academic Period Pill -->
+        <div class="p-3 mx-3 my-3 bg-blue-50/70 border border-blue-100/60 rounded-xl">
+          <div class="text-[10px] font-semibold text-blue-700 uppercase tracking-wider flex items-center gap-1.5">
+            <span class="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse"></span>
+            <span>Tahun Ajaran Aktif</span>
+          </div>
+          <div id="sidebar-period-badge" class="text-xs font-bold text-slate-800 mt-0.5 truncate">
+            Memuat periode...
           </div>
         </div>
 
-        <!-- User Profile & Logout -->
-        <div class="flex items-center gap-4">
-          <div class="text-right hidden sm:block">
-            <div id="user-display-name" class="font-semibold text-sm text-slate-800">Nama Pengguna</div>
-            <div id="user-display-role" class="text-xs text-slate-500 uppercase tracking-wider font-medium">Role</div>
+        <!-- Dynamic Menu Items -->
+        <nav class="px-3 space-y-1 custom-scroll overflow-y-auto max-h-[calc(100vh-230px)]" id="sidebar-nav-container">
+          <!-- Item menu akan dirender secara dinamis oleh ViewController -->
+        </nav>
+      </div>
+
+      <!-- Bottom User Section -->
+      <div class="p-3 border-t border-slate-100 bg-slate-50/50">
+        <div class="flex items-center justify-between p-2 rounded-xl bg-white border border-slate-200/80 shadow-xs">
+          <div class="flex items-center gap-2.5 overflow-hidden">
+            <div id="user-avatar-badge"
+              class="w-8 h-8 rounded-lg bg-blue-100 text-blue-800 font-bold text-xs flex items-center justify-center flex-shrink-0">
+              U
+            </div>
+            <div class="overflow-hidden">
+              <div id="sidebar-user-name" class="text-xs font-semibold text-slate-800 truncate">Nama User</div>
+              <div id="sidebar-user-role" class="text-[10px] text-slate-400 uppercase font-medium">Role</div>
+            </div>
           </div>
-          <button type="button" id="btn-logout" onclick="handleLogout()"
-            class="py-2 px-3.5 bg-slate-100 hover:bg-red-50 hover:text-red-700 text-slate-700 text-xs font-semibold rounded-lg border border-slate-200 transition-colors flex items-center gap-1.5">
+          <button type="button" onclick="handleLogout()" title="Keluar"
+            class="p-1.5 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
             </svg>
-            <span>Keluar</span>
           </button>
         </div>
       </div>
-    </header>
+    </aside>
 
-    <!-- Main Content Container (Placeholder siap untuk Phase 3) -->
-    <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
-      <div class="bg-white rounded-2xl border border-slate-200 p-8 text-center shadow-sm">
-        <div class="inline-flex items-center justify-center w-14 h-14 bg-blue-50 text-blue-700 rounded-full mb-4">
-          <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-          </svg>
+    <!-- MAIN VIEWPORT CONTAINER -->
+    <div class="flex-1 flex flex-col min-w-0">
+
+      <!-- Top Header Navbar -->
+      <header class="h-16 bg-white border-b border-slate-200 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30">
+        <div class="flex items-center gap-3">
+          <!-- Mobile Hamburger Toggle -->
+          <button type="button" onclick="toggleMobileDrawer(true)"
+            class="md:hidden p-2 text-slate-600 hover:text-slate-900 rounded-xl hover:bg-slate-100 focus:outline-none">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+            </svg>
+          </button>
+
+          <!-- Breadcrumb & Page Title -->
+          <div>
+            <div class="flex items-center gap-2 text-xs text-slate-400">
+              <span id="header-school-name" class="font-medium">SD Negeri</span>
+              <span>/</span>
+              <span id="header-role-label" class="capitalize">Dashboard</span>
+            </div>
+            <h1 id="header-view-title" class="text-base sm:text-lg font-bold text-slate-900 leading-tight">
+              Dashboard
+            </h1>
+          </div>
         </div>
-        <h3 class="text-lg font-bold text-slate-900 mb-1">Autentikasi Berhasil (Phase 2 Selesai)</h3>
-        <p class="text-sm text-slate-500 max-w-md mx-auto mb-6">
-          Sesi aktif berhasil divalidasi server-side. Shell aplikasi siap untuk implementasi tata letak dan navigasi pada Phase 3.
-        </p>
-        <div class="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 rounded-xl text-xs font-mono text-slate-700">
-          <span>Status Sesi:</span>
-          <span class="text-emerald-700 font-bold">AKTIF (TTL 2 Jam)</span>
+
+        <!-- Right Side Header Controls -->
+        <div class="flex items-center gap-3">
+          <div id="header-status-badge" class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full text-xs font-medium">
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+            <span>Online</span>
+          </div>
+
+          <button type="button" onclick="handleLogout()"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-red-700 bg-slate-100 hover:bg-red-50 rounded-lg border border-slate-200 transition-colors">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+            </svg>
+            <span class="hidden sm:inline">Keluar</span>
+          </button>
         </div>
-      </div>
-    </main>
+      </header>
+
+      <!-- Main Content Area -->
+      <main class="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
+
+        <!-- Loading State Skeleton -->
+        <div id="state-loading" class="space-y-6">
+          <div class="h-28 bg-white border border-slate-200 rounded-2xl p-6 flex items-center justify-between animate-pulse">
+            <div class="space-y-2">
+              <div class="h-5 w-48 bg-slate-200 rounded"></div>
+              <div class="h-4 w-72 bg-slate-100 rounded"></div>
+            </div>
+            <div class="h-10 w-28 bg-slate-200 rounded-xl"></div>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="h-28 bg-white border border-slate-200 rounded-2xl p-5 animate-pulse"></div>
+            <div class="h-28 bg-white border border-slate-200 rounded-2xl p-5 animate-pulse"></div>
+            <div class="h-28 bg-white border border-slate-200 rounded-2xl p-5 animate-pulse"></div>
+            <div class="h-28 bg-white border border-slate-200 rounded-2xl p-5 animate-pulse"></div>
+          </div>
+          <div class="h-64 bg-white border border-slate-200 rounded-2xl p-6 animate-pulse"></div>
+        </div>
+
+        <!-- Error State Alert -->
+        <div id="state-error" class="hidden bg-white border border-red-200 rounded-2xl p-8 text-center max-w-md mx-auto my-12 shadow-sm">
+          <div class="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+          </div>
+          <h3 class="text-base font-bold text-slate-900 mb-1">Gagal Memuat Data</h3>
+          <p class="text-sm text-slate-500 mb-6" id="state-error-message">Terjadi gangguan saat menghubungkan ke server.</p>
+          <button type="button" onclick="loadDashboardData()"
+            class="px-5 py-2.5 bg-blue-700 hover:bg-blue-800 text-white font-medium text-xs rounded-xl transition-all shadow-sm">
+            Coba Lagi
+          </button>
+        </div>
+
+        <!-- VIEW CONTAINER: DASHBOARD -->
+        <div id="view-dashboard" class="hidden space-y-6">
+          <!-- Dynamic Content Dashboard akan diinjeksi oleh renderDashboard() -->
+        </div>
+
+        <!-- VIEW CONTAINER: MODUL DALAM PERSIAPAN (Placeholder modular) -->
+        <div id="view-placeholder" class="hidden">
+          <div class="bg-white border border-slate-200 rounded-2xl p-8 sm:p-12 text-center shadow-xs">
+            <div id="placeholder-icon-container" class="w-16 h-16 bg-blue-50 text-blue-700 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-blue-100">
+              <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+              </svg>
+            </div>
+            <div class="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-xs font-semibold mb-3" id="placeholder-phase-badge">
+              Fase Selanjutnya
+            </div>
+            <h2 class="text-xl font-bold text-slate-900 mb-2" id="placeholder-title">Nama Modul</h2>
+            <p class="text-sm text-slate-500 max-w-lg mx-auto mb-8" id="placeholder-description">
+              Modul ini sedang disiapkan sesuai roadmap pengerjaan sistem. Fitur operasional akan diaktifkan pada fase berikutnya.
+            </p>
+            <div class="flex items-center justify-center gap-3">
+              <button type="button" onclick="ViewController.navigateTo('dashboard')"
+                class="px-4 py-2.5 bg-blue-700 hover:bg-blue-800 text-white font-medium text-xs rounded-xl transition-all shadow-sm">
+                Kembali ke Dashboard
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </main>
+    </div>
   </div>
 
   <!-- ==================================================================== -->
-  <!-- JAVASCRIPT CLIENT-SIDE LOGIC -->
+  <!-- JAVASCRIPT CLIENT-SIDE ARCHITECTURE -->
   <!-- ==================================================================== -->
   <script>
     const STORAGE_KEY = 'absensi_sd_session_token';
+
+    // State Aplikasi Klien Terpusat
+    const APP_STATE = {
+      token: null,
+      user: null,
+      schoolProfile: null,
+      activeYear: null,
+      dashboardData: null,
+      currentRoute: 'dashboard'
+    };
+
+    // Konfigurasi Navigasi dan Metadata Modul Sesuai Role (PRD & Arsitektur)
+    const ROLE_NAVIGATION = {
+      kepala_sekolah: [
+        {
+          id: 'dashboard',
+          title: 'Dashboard',
+          phase: 'Phase 3 (Aktif)',
+          desc: 'Ringkasan operasional dan kelengkapan nilai sekolah.',
+          icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>'
+        },
+        {
+          id: 'tahun_ajaran',
+          title: 'Tahun Ajaran',
+          phase: 'Phase 4',
+          desc: 'Pengelolaan periode akademik, semester, dan status kunci periode historis.',
+          icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>'
+        },
+        {
+          id: 'penugasan',
+          title: 'Penugasan Wali Kelas',
+          phase: 'Phase 4',
+          desc: 'Penetapan guru wali kelas untuk Kelas 1–6 pada periode aktif.',
+          icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>'
+        },
+        {
+          id: 'pengguna',
+          title: 'Manajemen Pengguna',
+          phase: 'Phase 5',
+          desc: 'Pengelolaan akun guru, status aktif, dan reset kredensial.',
+          icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>'
+        },
+        {
+          id: 'siswa_mapel',
+          title: 'Siswa & Mapel',
+          phase: 'Phase 5',
+          desc: 'Monitoring dan pengelolaan data siswa serta mata pelajaran per kelas.',
+          icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>'
+        },
+        {
+          id: 'rapor_sekolah',
+          title: 'Rapor Seluruh Kelas',
+          phase: 'Phase 7',
+          desc: 'Pemantauan rekapitulasi nilai, ranking sekolah, dan cetak rapor.',
+          icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>'
+        },
+        {
+          id: 'pengumuman',
+          title: 'Pengumuman',
+          phase: 'Phase 8',
+          desc: 'Publikasi arahan dan pengumuman resmi bagi seluruh wali kelas.',
+          icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"/>'
+        },
+        {
+          id: 'pengaturan',
+          title: 'Pengaturan Sekolah',
+          phase: 'Phase 8',
+          desc: 'Konfigurasi identitas sekolah, nama Kepala Sekolah, NIP, dan logo.',
+          icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>'
+        }
+      ],
+      wali_kelas: [
+        {
+          id: 'dashboard',
+          title: 'Dashboard Kelas',
+          phase: 'Phase 3 (Aktif)',
+          desc: 'Ringkasan data siswa dan kelengkapan nilai kelas yang diampu.',
+          icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>'
+        },
+        {
+          id: 'siswa',
+          title: 'Data Siswa',
+          phase: 'Phase 5',
+          desc: 'Daftar nama, NISN, NIS, dan profil siswa pada kelas sendiri.',
+          icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>'
+        },
+        {
+          id: 'mata_pelajaran',
+          title: 'Mata Pelajaran',
+          phase: 'Phase 5',
+          desc: 'Pengelolaan daftar mata pelajaran kurikulum untuk kelas diampu.',
+          icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>'
+        },
+        {
+          id: 'input_nilai',
+          title: 'Input Nilai',
+          phase: 'Phase 6',
+          desc: 'Pengisian nilai Tugas 1–4, UTS, dan UAS per mata pelajaran.',
+          icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>'
+        },
+        {
+          id: 'sikap_kehadiran',
+          title: 'Sikap & Kehadiran',
+          phase: 'Phase 6',
+          desc: 'Pencatatan nilai karakter/sikap dan rekap kehadiran (S/I/A).',
+          icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>'
+        },
+        {
+          id: 'rapor_kelas',
+          title: 'Rapor Digital Kelas',
+          phase: 'Phase 7',
+          desc: 'Pratinjau, perhitungan ranking ties, dan cetak rapor digital.',
+          icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>'
+        },
+        {
+          id: 'pengaturan_rapor',
+          title: 'Pengaturan Rapor',
+          phase: 'Phase 6',
+          desc: 'Konfigurasi bobot penilaian (Tugas/UTS/UAS) dan rentang predikat.',
+          icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/>'
+        },
+        {
+          id: 'pengumuman',
+          title: 'Pengumuman',
+          phase: 'Phase 8',
+          desc: 'Melihat arahan dan informasi resmi dari Kepala Sekolah.',
+          icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>'
+        }
+      ]
+    };
 
     // Wrapper pemanggilan backend google.script.run berbasis Promise
     function callBackend(functionName, ...args) {
       return new Promise((resolve, reject) => {
         if (typeof google === 'undefined' || !google.script || !google.script.run) {
-          // Lingkungan pratinjau lokal tanpa Apps Script runner
+          // Lingkungan pratinjau browser lokal tanpa runner GAS
           reject(new Error('Koneksi Google Apps Script tidak tersedia di lingkungan ini.'));
           return;
         }
@@ -182,7 +472,34 @@
       }, 3500);
     }
 
-    // Tampilkan pesan error pada form login
+    // Modal Sesi Kedaluwarsa
+    function showSessionExpiredModal(message) {
+      if (message) {
+        document.getElementById('modal-expired-message').textContent = message;
+      }
+      document.getElementById('modal-session-expired').classList.remove('hidden');
+    }
+
+    function acknowledgeSessionExpired() {
+      document.getElementById('modal-session-expired').classList.add('hidden');
+      localStorage.removeItem(STORAGE_KEY);
+      showLoginView();
+    }
+
+    // Mobile Drawer Toggle
+    function toggleMobileDrawer(open) {
+      const drawer = document.getElementById('app-sidebar');
+      const backdrop = document.getElementById('mobile-drawer-backdrop');
+      if (open) {
+        drawer.classList.remove('-translate-x-full');
+        backdrop.classList.remove('hidden');
+      } else {
+        drawer.classList.add('-translate-x-full');
+        backdrop.classList.add('hidden');
+      }
+    }
+
+    // Error Alert Form Login
     function showLoginError(msg) {
       const alertBox = document.getElementById('login-error-alert');
       const textSpan = document.getElementById('login-error-text');
@@ -195,19 +512,36 @@
       alertBox.classList.add('hidden');
     }
 
-    // Toggle tampilan Login vs App Shell
-    function showAppShell(user) {
-      document.getElementById('view-login').classList.add('hidden');
-      document.getElementById('view-app-shell').classList.remove('hidden');
-      document.getElementById('user-display-name').textContent = user.nama || user.username;
-      document.getElementById('user-display-role').textContent = user.role === 'kepala_sekolah' ? 'Kepala Sekolah' : 'Wali Kelas';
-    }
-
+    // Toggle View Antara Login vs App Shell
     function showLoginView() {
       document.getElementById('view-app-shell').classList.add('hidden');
       document.getElementById('view-login').classList.remove('hidden');
       document.getElementById('form-login').reset();
       hideLoginError();
+      APP_STATE.token = null;
+      APP_STATE.user = null;
+    }
+
+    function showAppShellView(user) {
+      APP_STATE.user = user;
+      document.getElementById('view-login').classList.add('hidden');
+      document.getElementById('view-app-shell').classList.remove('hidden');
+
+      // Update identitas user
+      const displayName = user.nama || user.username;
+      const displayRole = user.role === 'kepala_sekolah' ? 'Kepala Sekolah' : 'Wali Kelas';
+      const initials = (displayName || 'U').split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
+
+      document.getElementById('sidebar-user-name').textContent = displayName;
+      document.getElementById('sidebar-user-role').textContent = displayRole;
+      document.getElementById('user-avatar-badge').textContent = initials;
+      document.getElementById('header-role-label').textContent = displayRole;
+
+      // Inisialisasi Navigasi Menu berdasarkan role
+      ViewController.buildNavigation(user.role);
+
+      // Muat data dashboard
+      loadDashboardData();
     }
 
     // Handler Submit Login Form
@@ -237,9 +571,10 @@
       try {
         const response = await callBackend('apiLogin', username, password);
         if (response && response.success && response.data && response.data.token) {
+          APP_STATE.token = response.data.token;
           localStorage.setItem(STORAGE_KEY, response.data.token);
           showToast('Login berhasil. Selamat datang!', 'success');
-          showAppShell(response.data.user);
+          showAppShellView(response.data.user);
         } else {
           showLoginError((response && response.message) || 'Username atau password salah.');
         }
@@ -254,17 +589,323 @@
 
     // Handler Logout
     async function handleLogout() {
-      const token = localStorage.getItem(STORAGE_KEY);
+      const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
       localStorage.removeItem(STORAGE_KEY);
+      APP_STATE.token = null;
+      APP_STATE.user = null;
+
       if (token) {
         try {
           await callBackend('apiLogout', token);
         } catch (e) {
-          // Sesi lokal tetap dibersihkan
+          // Abaikan kesalahan koneksi saat logout
         }
       }
       showToast('Anda telah keluar dari sistem.', 'info');
       showLoginView();
+    }
+
+    // ====================================================================
+    // VIEW CONTROLLER (Router Sederhana & Manajemen Halaman)
+    // ====================================================================
+    const ViewController = {
+      buildNavigation(role) {
+        const navContainer = document.getElementById('sidebar-nav-container');
+        navContainer.innerHTML = '';
+
+        const menuItems = ROLE_NAVIGATION[role] || [];
+        menuItems.forEach(item => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.id = `nav-item-${item.id}`;
+          btn.onclick = () => ViewController.navigateTo(item.id);
+          btn.className = `w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+            item.id === APP_STATE.currentRoute
+              ? 'bg-blue-700 text-white shadow-xs'
+              : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+          }`;
+
+          btn.innerHTML = `
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              ${item.icon}
+            </svg>
+            <span class="truncate">${item.title}</span>
+          `;
+          navContainer.appendChild(btn);
+        });
+      },
+
+      navigateTo(routeId) {
+        const role = APP_STATE.user ? APP_STATE.user.role : null;
+        const menuItems = ROLE_NAVIGATION[role] || [];
+        const targetRoute = menuItems.find(m => m.id === routeId);
+
+        if (!targetRoute) {
+          showToast('Halaman tidak ditemukan atau tidak memiliki izin akses.', 'error');
+          return;
+        }
+
+        APP_STATE.currentRoute = routeId;
+        toggleMobileDrawer(false);
+
+        // Update styling tombol navigasi
+        menuItems.forEach(item => {
+          const btn = document.getElementById(`nav-item-${item.id}`);
+          if (btn) {
+            if (item.id === routeId) {
+              btn.className = 'w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold bg-blue-700 text-white shadow-xs transition-all';
+            } else {
+              btn.className = 'w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-all';
+            }
+          }
+        });
+
+        // Update judul header
+        document.getElementById('header-view-title').textContent = targetRoute.title;
+
+        // Toggle kontainer tampilan
+        const viewDashboard = document.getElementById('view-dashboard');
+        const viewPlaceholder = document.getElementById('view-placeholder');
+
+        if (routeId === 'dashboard') {
+          viewPlaceholder.classList.add('hidden');
+          viewDashboard.classList.remove('hidden');
+          renderDashboardContent(APP_STATE.dashboardData);
+        } else {
+          viewDashboard.classList.add('hidden');
+          viewPlaceholder.classList.remove('hidden');
+
+          document.getElementById('placeholder-title').textContent = targetRoute.title;
+          document.getElementById('placeholder-phase-badge').textContent = targetRoute.phase;
+          document.getElementById('placeholder-description').textContent = targetRoute.desc;
+        }
+      }
+    };
+
+    // Muat data ringkasan dashboard awal dari server
+    async function loadDashboardData() {
+      const stateLoading = document.getElementById('state-loading');
+      const stateError = document.getElementById('state-error');
+      const viewDashboard = document.getElementById('view-dashboard');
+      const viewPlaceholder = document.getElementById('view-placeholder');
+
+      stateLoading.classList.remove('hidden');
+      stateError.classList.add('hidden');
+      viewDashboard.classList.add('hidden');
+      viewPlaceholder.classList.add('hidden');
+
+      try {
+        const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+        const res = await callBackend('apiGetInitialDashboard', token);
+
+        if (res && res.success && res.data) {
+          APP_STATE.dashboardData = res.data;
+          APP_STATE.schoolProfile = res.data.schoolProfile;
+          APP_STATE.activeYear = res.data.activeYear;
+
+          // Update label sekolah & tahun ajaran di UI
+          const schoolName = res.data.schoolProfile ? res.data.schoolProfile.namaSekolah : 'SD Negeri';
+          document.getElementById('sidebar-school-title').textContent = schoolName;
+          document.getElementById('header-school-name').textContent = schoolName;
+          document.getElementById('login-school-name').textContent = schoolName;
+
+          const periodText = res.data.activeYear
+            ? `${res.data.activeYear.tahunAjaran} (${res.data.activeYear.semester})`
+            : 'Belum Ada Periode Aktif';
+          document.getElementById('sidebar-period-badge').textContent = periodText;
+
+          stateLoading.classList.add('hidden');
+          ViewController.navigateTo(APP_STATE.currentRoute || 'dashboard');
+        } else {
+          // Tangani sesi kedaluwarsa
+          const errMsg = (res && res.message) || '';
+          if (errMsg.includes('Sesi tidak valid') || errMsg.includes('kedaluwarsa') || errMsg.includes('Akses ditolak')) {
+            showSessionExpiredModal(errMsg);
+            return;
+          }
+          throw new Error(errMsg || 'Gagal mengambil data dashboard.');
+        }
+      } catch (err) {
+        stateLoading.classList.add('hidden');
+        document.getElementById('state-error-message').textContent = err.message || 'Gagal memuat ringkasan data.';
+        stateError.classList.remove('hidden');
+      }
+    }
+
+    // Render Konten Dashboard Dinamis Berdasarkan Role
+    function renderDashboardContent(data) {
+      const container = document.getElementById('view-dashboard');
+      if (!data) return;
+
+      const user = data.user || {};
+      const summary = data.summary || {};
+      const activeYear = data.activeYear;
+      const isKepsek = user.role === 'kepala_sekolah';
+
+      let html = '';
+
+      // 1. Welcome Hero Banner
+      html += `
+        <div class="bg-gradient-to-r from-blue-700 via-indigo-700 to-indigo-800 rounded-2xl p-6 sm:p-8 text-white shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <div class="inline-flex items-center gap-2 px-3 py-1 bg-white/10 rounded-full text-xs font-semibold backdrop-blur-md mb-2 border border-white/20">
+              <span>${isKepsek ? 'Portal Pengawasan Kepala Sekolah' : 'Portal Manajemen Wali Kelas'}</span>
+            </div>
+            <h2 class="text-xl sm:text-2xl font-bold tracking-tight">Selamat Datang, ${user.nama || user.username}!</h2>
+            <p class="text-blue-100 text-xs sm:text-sm mt-1 max-w-xl">
+              ${isKepsek
+                ? 'Pantau kelengkapan nilai siswa, kelola penugasan wali kelas, dan awasi pelaksanaan kurikulum sekolah.'
+                : (summary.hasAssignment
+                    ? `Anda ditugaskan mengampu <strong>Kelas ${summary.kelas}</strong> pada periode ${activeYear ? activeYear.tahunAjaran + ' ' + activeYear.semester : ''}.`
+                    : 'Anda belum memiliki penugasan kelas pada tahun ajaran aktif ini.')}
+            </p>
+          </div>
+          <div class="bg-white/10 p-3 rounded-xl backdrop-blur-md border border-white/20 text-center flex-shrink-0">
+            <div class="text-[10px] text-blue-200 uppercase font-semibold">Status Periode</div>
+            <div class="text-sm font-bold mt-0.5">${activeYear ? (activeYear.isLocked ? '🔒 Terkunci' : 'Aktif') : 'Nonaktif'}</div>
+          </div>
+        </div>
+      `;
+
+      if (isKepsek) {
+        // 2. Metric Cards untuk Kepala Sekolah
+        html += `
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs">
+              <div class="flex items-center justify-between text-slate-400 mb-2">
+                <span class="text-xs font-semibold text-slate-500 uppercase">Siswa Terdaftar</span>
+                <div class="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+                </div>
+              </div>
+              <div class="text-2xl font-bold text-slate-900">${summary.totalSiswa || 0}</div>
+              <p class="text-[11px] text-slate-400 mt-1">Total siswa aktif di database</p>
+            </div>
+
+            <div class="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs">
+              <div class="flex items-center justify-between text-slate-400 mb-2">
+                <span class="text-xs font-semibold text-slate-500 uppercase">Wali Kelas Aktif</span>
+                <div class="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                </div>
+              </div>
+              <div class="text-2xl font-bold text-slate-900">${summary.totalGuru || 0}</div>
+              <p class="text-[11px] text-slate-400 mt-1">Guru berstatus wali kelas aktif</p>
+            </div>
+
+            <div class="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs">
+              <div class="flex items-center justify-between text-slate-400 mb-2">
+                <span class="text-xs font-semibold text-slate-500 uppercase">Kelas Ditugaskan</span>
+                <div class="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                </div>
+              </div>
+              <div class="text-2xl font-bold text-slate-900">${summary.totalKelasDitugaskan || 0} / ${summary.totalKelasMaksimal || 6}</div>
+              <p class="text-[11px] text-slate-400 mt-1">Kelas 1–6 periode aktif</p>
+            </div>
+
+            <div class="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs">
+              <div class="flex items-center justify-between text-slate-400 mb-2">
+                <span class="text-xs font-semibold text-slate-500 uppercase">Status Sistem</span>
+                <div class="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                </div>
+              </div>
+              <div class="text-xl font-bold text-emerald-600">Siap Operasi</div>
+              <p class="text-[11px] text-slate-400 mt-1">Database &amp; Sesi Terverifikasi</p>
+            </div>
+          </div>
+
+          <!-- Modul Roadmap Box untuk Kepala Sekolah -->
+          <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
+            <h3 class="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4 flex items-center gap-2">
+              <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+              <span>Akses Cepat Pengelolaan Sekolah</span>
+            </h3>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div onclick="ViewController.navigateTo('tahun_ajaran')" class="p-4 rounded-xl border border-slate-100 bg-slate-50 hover:bg-blue-50/60 hover:border-blue-200 transition-all cursor-pointer group">
+                <div class="text-xs font-bold text-slate-800 group-hover:text-blue-700">1. Tahun Ajaran &amp; Semester</div>
+                <p class="text-[11px] text-slate-500 mt-1">Buka / kunci periode akademik baru untuk sekolah.</p>
+              </div>
+              <div onclick="ViewController.navigateTo('penugasan')" class="p-4 rounded-xl border border-slate-100 bg-slate-50 hover:bg-blue-50/60 hover:border-blue-200 transition-all cursor-pointer group">
+                <div class="text-xs font-bold text-slate-800 group-hover:text-blue-700">2. Penugasan Wali Kelas</div>
+                <p class="text-[11px] text-slate-500 mt-1">Tentukan guru pengampu untuk Kelas 1 sampai Kelas 6.</p>
+              </div>
+              <div onclick="ViewController.navigateTo('rapor_sekolah')" class="p-4 rounded-xl border border-slate-100 bg-slate-50 hover:bg-blue-50/60 hover:border-blue-200 transition-all cursor-pointer group">
+                <div class="text-xs font-bold text-slate-800 group-hover:text-blue-700">3. Rapor &amp; Rekapitulasi</div>
+                <p class="text-[11px] text-slate-500 mt-1">Pantau ranking agregat dan kemajuan pengisian rapor.</p>
+              </div>
+            </div>
+          </div>
+        `;
+      } else {
+        // 2. Metric Cards / Empty State untuk Wali Kelas
+        if (summary.hasAssignment) {
+          html += `
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div class="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs">
+                <div class="text-xs font-semibold text-slate-400 uppercase mb-1">Kelas Yang Diampu</div>
+                <div class="text-2xl font-bold text-blue-700">Kelas ${summary.kelas}</div>
+                <p class="text-[11px] text-slate-500 mt-1">Penugasan Semester Aktif</p>
+              </div>
+
+              <div class="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs">
+                <div class="text-xs font-semibold text-slate-400 uppercase mb-1">Jumlah Siswa Kelas</div>
+                <div class="text-2xl font-bold text-slate-900">${summary.totalSiswa || 0} Siswa</div>
+                <p class="text-[11px] text-slate-500 mt-1">Terdaftar dalam rombel kelas Anda</p>
+              </div>
+
+              <div class="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs">
+                <div class="text-xs font-semibold text-slate-400 uppercase mb-1">Kelengkapan Nilai</div>
+                <div class="text-2xl font-bold text-emerald-600">${summary.kelengkapanNilaiPersen || 0}%</div>
+                <p class="text-[11px] text-slate-500 mt-1">Komponen nilai Tugas, UTS, dan UAS</p>
+              </div>
+            </div>
+
+            <!-- Pintasan Modul Wali Kelas -->
+            <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
+              <h3 class="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4 flex items-center gap-2">
+                <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                <span>Aksi Utama Penilaian Kelas</span>
+              </h3>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div onclick="ViewController.navigateTo('siswa')" class="p-4 rounded-xl border border-slate-100 bg-slate-50 hover:bg-blue-50/60 hover:border-blue-200 transition-all cursor-pointer group">
+                  <div class="text-xs font-bold text-slate-800 group-hover:text-blue-700">1. Data Siswa Kelas</div>
+                  <p class="text-[11px] text-slate-500 mt-1">Periksa kelengkapan identitas dan nomor absen siswa.</p>
+                </div>
+                <div onclick="ViewController.navigateTo('input_nilai')" class="p-4 rounded-xl border border-slate-100 bg-slate-50 hover:bg-blue-50/60 hover:border-blue-200 transition-all cursor-pointer group">
+                  <div class="text-xs font-bold text-slate-800 group-hover:text-blue-700">2. Input Nilai Siswa</div>
+                  <p class="text-[11px] text-slate-500 mt-1">Masukkan nilai Tugas 1–4, UTS, dan UAS per mata pelajaran.</p>
+                </div>
+                <div onclick="ViewController.navigateTo('rapor_kelas')" class="p-4 rounded-xl border border-slate-100 bg-slate-50 hover:bg-blue-50/60 hover:border-blue-200 transition-all cursor-pointer group">
+                  <div class="text-xs font-bold text-slate-800 group-hover:text-blue-700">3. Rapor Digital &amp; Cetak</div>
+                  <p class="text-[11px] text-slate-500 mt-1">Lihat hasil akhir, ranking kelas, dan cetak rapor digital.</p>
+                </div>
+              </div>
+            </div>
+          `;
+        } else {
+          // EMPTY STATE JIKA BELUM ADA PENUGASAN WALI KELAS
+          html += `
+            <div class="bg-white rounded-2xl border border-amber-200 p-8 sm:p-12 text-center shadow-xs">
+              <div class="w-14 h-14 bg-amber-50 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-4 border border-amber-200">
+                <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                </svg>
+              </div>
+              <h3 class="text-lg font-bold text-slate-900 mb-1">Belum Ada Penugasan Kelas Aktif</h3>
+              <p class="text-sm text-slate-500 max-w-md mx-auto mb-6">
+                Akun Anda berstatus sebagai Wali Kelas, namun belum ditugaskan pada salah satu kelas (Kelas 1–6) untuk periode tahun ajaran ini.
+              </p>
+              <div class="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 rounded-xl text-xs text-slate-600">
+                <span>Silakan hubungi <strong>Kepala Sekolah</strong> untuk penetapan penugasan kelas.</span>
+              </div>
+            </div>
+          `;
+        }
+      }
+
+      container.innerHTML = html;
     }
 
     // Inisialisasi awal saat halaman dimuat
@@ -274,11 +915,12 @@
         try {
           const res = await callBackend('apiGetSessionUser', storedToken);
           if (res && res.success && res.data) {
-            showAppShell(res.data);
+            APP_STATE.token = storedToken;
+            showAppShellView(res.data);
             return;
           }
         } catch (e) {
-          // Token tidak valid atau sesi berakhir
+          // Abaikan kesalahan koneksi atau token tidak valid
         }
         localStorage.removeItem(STORAGE_KEY);
       }

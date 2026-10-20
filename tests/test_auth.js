@@ -205,31 +205,55 @@ function createAuthMockSpreadsheet() {
     ['u-03', 'Guru Cuti', '', 'guru_nonaktif', hashPbkdf2, saltPbkdf2, 'wali_kelas', '', '', false, '2026-01-01', '2026-01-01']
   ];
 
-  const userSheet = {
-    getName: () => 'user',
-    getLastRow: () => userRows.length,
-    getLastColumn: () => userHeaders.length,
-    getRange: function(r, c, numR, numC) {
-      return {
-        getValues: function() {
-          const res = [];
-          for (let row = r - 1; row < r - 1 + (numR || 1); row++) {
-            const rowData = [];
-            for (let col = c - 1; col < c - 1 + (numC || 1); col++) {
-              rowData.push(userRows[row][col]);
+  function createMockSheet(name, headers, rows) {
+    const allRows = [headers, ...(rows || [])];
+    return {
+      getName: () => name,
+      getLastRow: () => allRows.length,
+      getLastColumn: () => headers.length,
+      getRange: function(r, c, numR, numC) {
+        return {
+          getValues: function() {
+            const res = [];
+            for (let row = r - 1; row < r - 1 + (numR || 1); row++) {
+              const rowData = [];
+              for (let col = c - 1; col < c - 1 + (numC || 1); col++) {
+                rowData.push(allRows[row] ? allRows[row][col] : '');
+              }
+              res.push(rowData);
             }
-            res.push(rowData);
+            return res;
+          },
+          setValue: function(val) {
+            if (allRows[r - 1]) allRows[r - 1][c - 1] = val;
           }
-          return res;
-        },
-        setValue: function(val) {
-          userRows[r - 1][c - 1] = val;
-        }
-      };
-    }
-  };
+        };
+      }
+    };
+  }
 
-  const sheets = { user: userSheet };
+  const userSheet = createMockSheet('user', userHeaders, userRows.slice(1));
+  const pengSheet = createMockSheet('pengaturan', setupModule.SCHEMA_DEFINITIONS.pengaturan, [
+    ['1', '', 'SD Negeri Percobaan 01', 'Bpk Sudirman, M.Pd.', '197501011999031001', 'u-01', '2026-01-01', '2026-01-01']
+  ]);
+  const taSheet = createMockSheet('tahun_ajaran', setupModule.SCHEMA_DEFINITIONS.tahun_ajaran, [
+    ['ta-01', '2026/2027', 'Ganjil', '2026-07-15', '2026-12-20', true, false, '2026-01-01', '2026-01-01']
+  ]);
+  const wkSheet = createMockSheet('wali_kelas', setupModule.SCHEMA_DEFINITIONS.wali_kelas, [
+    ['wk-01', 'u-02', 'ta-01', '4', true, '2026-01-01', '2026-01-01']
+  ]);
+  const siswaSheet = createMockSheet('siswa', setupModule.SCHEMA_DEFINITIONS.siswa, [
+    ['s-01', 'wk-01', '1234567890', '1001', 'Ahmad Siswa', 'L', 'Jakarta', '2015-05-10', 'Islam', 'Jl. Merdeka', 'Bpk Budi', '0811111', '', true, '2026-01-01', '2026-01-01'],
+    ['s-02', 'wk-01', '1234567891', '1002', 'Siti Siswi', 'P', 'Jakarta', '2015-08-12', 'Islam', 'Jl. Mawar', 'Bpk Ali', '0822222', '', true, '2026-01-01', '2026-01-01']
+  ]);
+
+  const sheets = {
+    user: userSheet,
+    pengaturan: pengSheet,
+    tahun_ajaran: taSheet,
+    wali_kelas: wkSheet,
+    siswa: siswaSheet
+  };
 
   return {
     getSheetByName: (name) => sheets[name] || null,
@@ -305,8 +329,55 @@ assert.strictEqual(authModule.getActiveSession(loginWali.data.token), null, 'Ses
 console.log('   ✓ Seluruh alur autentikasi, lazy rehash, audit login, dan kontrol role terverifikasi 100%.\n');
 
 // ============================================================================
+// UJI 9: Endpoint Dashboard Awal & Validasi Otorisasi Array Role (Phase 3)
+// ============================================================================
+console.log('9. Menguji Endpoint apiGetInitialDashboard dan Guard Array Role (Phase 3)...');
+
+// Login ulang wali kelas untuk mendapatkan sesi aktif baru
+const reLoginWali = authModule.apiLogin('walikelas1', 'WaliKelasPass123');
+assert.strictEqual(reLoginWali.success, true);
+const waliToken = reLoginWali.data.token;
+const kepsekToken = loginKepsek.data.token;
+
+// 1. Uji requireAuth dengan array roles
+const authMulti1 = authModule.requireAuth(kepsekToken, ['kepala_sekolah', 'wali_kelas']);
+assert.strictEqual(authMulti1.role, 'kepala_sekolah');
+
+const authMulti2 = authModule.requireAuth(waliToken, ['kepala_sekolah', 'wali_kelas']);
+assert.strictEqual(authMulti2.role, 'wali_kelas');
+
+assert.throws(() => {
+  authModule.requireAuth(waliToken, ['kepala_sekolah']);
+}, /tidak memiliki izin/, 'Wali kelas ditolak saat endpoint hanya untuk kepala sekolah');
+
+// 2. Uji apiGetInitialDashboard untuk Kepala Sekolah
+const dashKepsek = authModule.apiGetInitialDashboard(kepsekToken);
+assert.strictEqual(dashKepsek.success, true);
+assert.strictEqual(dashKepsek.data.user.role, 'kepala_sekolah');
+assert.strictEqual(dashKepsek.data.schoolProfile.namaSekolah, 'SD Negeri Percobaan 01');
+assert.strictEqual(dashKepsek.data.activeYear.tahunAjaran, '2026/2027');
+assert.strictEqual(dashKepsek.data.summary.totalGuru, 1, 'Total guru aktif harus 1');
+assert.strictEqual(dashKepsek.data.summary.totalKelasDitugaskan, 1, 'Total kelas ditugaskan harus 1');
+assert.strictEqual(dashKepsek.data.summary.totalSiswa, 2, 'Total siswa harus 2');
+
+// 3. Uji apiGetInitialDashboard untuk Wali Kelas
+const dashWali = authModule.apiGetInitialDashboard(waliToken);
+assert.strictEqual(dashWali.success, true);
+assert.strictEqual(dashWali.data.user.role, 'wali_kelas');
+assert.strictEqual(dashWali.data.summary.hasAssignment, true);
+assert.strictEqual(dashWali.data.summary.kelas, '4');
+assert.strictEqual(dashWali.data.summary.totalSiswa, 2);
+
+// 4. Uji apiGetInitialDashboard dengan token tidak valid / kedaluwarsa
+const dashBad = authModule.apiGetInitialDashboard('token_tidak_dikenal_123');
+assert.strictEqual(dashBad.success, false);
+assert.ok(dashBad.message.includes('Akses ditolak') || dashBad.message.includes('Sesi tidak valid'));
+
+console.log('   ✓ Integrasi backend dashboard Phase 3 tervalidasi 100% aman dan role-separated.\n');
+
+// ============================================================================
 // RINGKASAN AKHIR
 // ============================================================================
 console.log('======================================================');
-console.log('SELURUH PENGUJIAN PHASE 2 BERHASIL LULUS (100% PASS)');
+console.log('SELURUH PENGUJIAN PHASE 2 & 3 BERHASIL LULUS (100% PASS)');
 console.log('======================================================');

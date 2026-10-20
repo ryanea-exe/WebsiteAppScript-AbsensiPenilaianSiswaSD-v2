@@ -207,7 +207,10 @@ function computePBKDF2(password, salt, iterations, dkLen) {
 }
 
 /**
- * Menghasilkan salt acak berbasis CSPRNG Apps Script (UUID v4 ganda = 64 karakter hex = 256 bits).
+ * Menghasilkan salt acak berbasis CSPRNG Apps Script (UUID v4 ganda = 64 karakter hex).
+ * Catatan entropi: Dua UUID v4 dari Utilities.getUuid() memberikan ~244 bit entropi efektif
+ * (122 bit per UUID v4 karena bit version dan variant bersifat fixed), melampaui batas
+ * minimum rekomendasi keamanan industri/OWASP (128 bit).
  * @return {string}
  */
 function generateSecureSalt() {
@@ -649,8 +652,14 @@ function requireAuth(sessionToken, requiredRole) {
     throw new Error(AUTH_CONFIG.INACTIVE_USER_ERROR);
   }
 
-  if (requiredRole && userRow.role !== requiredRole) {
-    throw new Error('Akses ditolak: Anda tidak memiliki izin untuk operasi ini.');
+  if (requiredRole) {
+    if (Array.isArray(requiredRole)) {
+      if (!requiredRole.includes(userRow.role)) {
+        throw new Error('Akses ditolak: Anda tidak memiliki izin untuk operasi ini.');
+      }
+    } else if (userRow.role !== requiredRole) {
+      throw new Error('Akses ditolak: Anda tidak memiliki izin untuk operasi ini.');
+    }
   }
 
   return {
@@ -660,6 +669,141 @@ function requireAuth(sessionToken, requiredRole) {
     role: userRow.role,
     foto: userRow.foto || ''
   };
+}
+
+/**
+ * Endpoint Dashboard Awal (Phase 3):
+ * Mengambil ringkasan dashboard, identitas profil sekolah, periode aktif, dan statistik sesuai role.
+ * Otorisasi: Wajib sesi valid (kepala_sekolah atau wali_kelas).
+ *
+ * @param {string} sessionToken
+ * @return {{ success: boolean, data: Object|null, message: string }}
+ */
+function apiGetInitialDashboard(sessionToken) {
+  try {
+    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+
+    // 1. Profil Sekolah (Sheet pengaturan)
+    let schoolProfile = {
+      namaSekolah: 'SD Negeri Percobaan',
+      namaKepalaSekolah: '',
+      nipKepalaSekolah: '',
+      logoSekolah: ''
+    };
+    try {
+      const pengData = getSheetDataBatch('pengaturan');
+      if (pengData.rows.length > 0) {
+        const row = pengData.rows[0];
+        schoolProfile.namaSekolah = row.nama_sekolah || schoolProfile.namaSekolah;
+        schoolProfile.namaKepalaSekolah = row.nama_kepala_sekolah || '';
+        schoolProfile.nipKepalaSekolah = row.nip_kepala_sekolah || '';
+        schoolProfile.logoSekolah = row.logo_sekolah || '';
+      }
+    } catch (e) {
+      // Abaikan jika sheet pengaturan belum siap
+    }
+
+    // 2. Tahun Ajaran Aktif (Sheet tahun_ajaran)
+    let activeYear = null;
+    try {
+      const taData = getSheetDataBatch('tahun_ajaran');
+      const foundTa = taData.rows.find(ta => ta.is_active === true || String(ta.is_active).toLowerCase() === 'true');
+      if (foundTa) {
+        activeYear = {
+          id: foundTa.id,
+          tahunAjaran: foundTa.tahun_ajaran,
+          semester: foundTa.semester,
+          isLocked: foundTa.is_locked === true || String(foundTa.is_locked).toLowerCase() === 'true'
+        };
+      }
+    } catch (e) {
+      // Abaikan jika belum ada tahun ajaran
+    }
+
+    const payload = {
+      user: {
+        id: user.id,
+        nama: user.nama,
+        username: user.username,
+        role: user.role,
+        foto: user.foto || ''
+      },
+      schoolProfile: schoolProfile,
+      activeYear: activeYear
+    };
+
+    if (user.role === 'kepala_sekolah') {
+      // Data Ringkasan untuk Kepala Sekolah
+      let totalGuru = 0;
+      let totalKelasDitugaskan = 0;
+      let totalSiswa = 0;
+
+      try {
+        const uData = getSheetDataBatch('user');
+        totalGuru = uData.rows.filter(u => u.role === 'wali_kelas' && (u.is_active === true || String(u.is_active).toLowerCase() === 'true')).length;
+      } catch (e) {}
+
+      try {
+        const wkData = getSheetDataBatch('wali_kelas');
+        if (activeYear) {
+          totalKelasDitugaskan = wkData.rows.filter(w => w.tahun_ajaran_id === activeYear.id && (w.is_active === true || String(w.is_active).toLowerCase() === 'true')).length;
+        } else {
+          totalKelasDitugaskan = wkData.rows.filter(w => w.is_active === true || String(w.is_active).toLowerCase() === 'true').length;
+        }
+      } catch (e) {}
+
+      try {
+        const sData = getSheetDataBatch('siswa');
+        totalSiswa = sData.rows.filter(s => s.is_active !== false && String(s.is_active).toLowerCase() !== 'false').length;
+      } catch (e) {}
+
+      payload.summary = {
+        totalGuru: totalGuru,
+        totalKelasDitugaskan: totalKelasDitugaskan,
+        totalSiswa: totalSiswa,
+        totalKelasMaksimal: 6
+      };
+    } else if (user.role === 'wali_kelas') {
+      // Data Ringkasan untuk Wali Kelas
+      let penugasanAktif = null;
+      let totalSiswaKelas = 0;
+
+      try {
+        const wkData = getSheetDataBatch('wali_kelas');
+        const assignment = wkData.rows.find(w =>
+          w.user_id === user.id &&
+          (activeYear ? w.tahun_ajaran_id === activeYear.id : true) &&
+          (w.is_active === true || String(w.is_active).toLowerCase() === 'true')
+        );
+
+        if (assignment) {
+          penugasanAktif = {
+            id: assignment.id,
+            kelas: assignment.kelas,
+            tahunAjaranId: assignment.tahun_ajaran_id
+          };
+
+          const sData = getSheetDataBatch('siswa');
+          totalSiswaKelas = sData.rows.filter(s =>
+            s.wali_kelas_id === assignment.id &&
+            (s.is_active !== false && String(s.is_active).toLowerCase() !== 'false')
+          ).length;
+        }
+      } catch (e) {}
+
+      payload.assignment = penugasanAktif;
+      payload.summary = {
+        hasAssignment: !!penugasanAktif,
+        kelas: penugasanAktif ? penugasanAktif.kelas : null,
+        totalSiswa: totalSiswaKelas,
+        kelengkapanNilaiPersen: 0
+      };
+    }
+
+    return buildResponse(true, payload, 'Data dashboard awal berhasil dimuat.');
+  } catch (err) {
+    return buildResponse(false, null, err.message || 'Gagal memuat dashboard.');
+  }
 }
 
 // ============================================================================
@@ -701,6 +845,7 @@ if (typeof module !== 'undefined' && module.exports) {
     apiLogin,
     apiLogout,
     apiGetSessionUser,
+    apiGetInitialDashboard,
     requireAuth,
     doGet
   };
