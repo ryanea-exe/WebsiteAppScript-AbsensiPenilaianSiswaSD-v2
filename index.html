@@ -276,10 +276,125 @@
 
         <!-- VIEW CONTAINER: DASHBOARD -->
         <div id="view-dashboard" class="hidden space-y-6">
-          <!-- Dynamic Content Dashboard akan diinjeksi oleh renderDashboard() -->
+          <!-- Dynamic Content Dashboard akan diinjeksi oleh renderDashboardContent() -->
         </div>
 
-        <!-- VIEW CONTAINER: MODUL DALAM PERSIAPAN (Placeholder modular) -->
+        <!-- VIEW CONTAINER: TAHUN AJARAN & SEMESTER (Phase 4) -->
+        <div id="view-tahun-ajaran" class="hidden space-y-6">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
+            <div>
+              <h2 class="text-lg font-bold text-slate-900">Manajemen Tahun Ajaran &amp; Semester</h2>
+              <p class="text-xs text-slate-500 mt-1">Kelola kalender akademik sekolah, tetapkan periode aktif, dan amankan periode historis.</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button type="button" onclick="loadTahunAjaranList()"
+                class="px-3.5 py-2.5 text-xs font-semibold text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors flex items-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                <span>Segarkan</span>
+              </button>
+              <button type="button" id="btn-add-ta" onclick="openModalTambahTahunAjaran()"
+                class="px-4 py-2.5 text-xs font-semibold text-white bg-blue-700 hover:bg-blue-800 rounded-xl shadow-xs transition-colors flex items-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                <span>Tambah Periode</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Petunjuk Keamanan Aturan Periode -->
+          <div class="p-4 rounded-xl bg-blue-50/70 border border-blue-100 text-xs text-blue-800 flex items-start gap-3">
+            <svg class="w-5 h-5 flex-shrink-0 text-blue-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <div>
+              <strong>Aturan Integritas Sistem:</strong> Maksimal satu periode akademik berstatus <em>Aktif</em>. Periode historis yang telah digunakan penugasan/nilai wajib <em>Dikunci</em> agar data historis rapor dan ranking siswa terlindungi secara permanen.
+            </div>
+          </div>
+
+          <!-- Tabel Daftar Tahun Ajaran -->
+          <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead class="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-semibold">
+                  <tr>
+                    <th class="py-3.5 px-4 w-12 text-center">No</th>
+                    <th class="py-3.5 px-4">Tahun Ajaran</th>
+                    <th class="py-3.5 px-4">Semester</th>
+                    <th class="py-3.5 px-4">Rentang Tanggal</th>
+                    <th class="py-3.5 px-4 text-center">Status Aktif</th>
+                    <th class="py-3.5 px-4 text-center">Status Kunci</th>
+                    <th class="py-3.5 px-4 text-center">Relasi Data</th>
+                    <th class="py-3.5 px-4 text-center">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody id="ta-table-body" class="divide-y divide-slate-100 text-slate-700">
+                  <tr>
+                    <td colspan="8" class="py-8 text-center text-slate-400">Memuat data tahun ajaran...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- VIEW CONTAINER: PENUGASAN WALI KELAS (Phase 4) -->
+        <div id="view-penugasan" class="hidden space-y-6">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
+            <div>
+              <h2 class="text-lg font-bold text-slate-900">Penugasan Wali Kelas</h2>
+              <p class="text-xs text-slate-500 mt-1">Tetapkan guru pengampu untuk Kelas 1 sampai Kelas 6 pada tahun ajaran yang dipilih.</p>
+            </div>
+            <div class="flex items-center gap-3">
+              <!-- Filter Tahun Ajaran -->
+              <div class="flex items-center gap-2">
+                <label for="penugasan-filter-ta" class="text-xs font-semibold text-slate-500 hidden sm:inline">Periode:</label>
+                <select id="penugasan-filter-ta" onchange="handlePenugasanFilterChange()"
+                  class="py-2 px-3 text-xs font-semibold rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600">
+                  <option value="">Semua Periode</option>
+                </select>
+              </div>
+
+              <button type="button" id="btn-add-penugasan" onclick="openModalTambahPenugasan()"
+                class="px-4 py-2.5 text-xs font-semibold text-white bg-blue-700 hover:bg-blue-800 rounded-xl shadow-xs transition-colors flex items-center gap-1.5 flex-shrink-0">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                <span>Tambah Penugasan</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Quick Grid 6 Kelas Status -->
+          <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
+            <div class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-blue-600"></span>
+              <span>Status Rombel Kelas 1–6 (Periode Terpilih)</span>
+            </div>
+            <div id="penugasan-class-cards" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              <!-- Cards 1-6 akan diinjeksi via JS -->
+            </div>
+          </div>
+
+          <!-- Tabel Daftar Penugasan -->
+          <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead class="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-semibold">
+                  <tr>
+                    <th class="py-3.5 px-4 w-20 text-center">Kelas</th>
+                    <th class="py-3.5 px-4">Guru Wali Kelas</th>
+                    <th class="py-3.5 px-4">Tahun Ajaran &amp; Semester</th>
+                    <th class="py-3.5 px-4 text-center">Siswa Rombel</th>
+                    <th class="py-3.5 px-4 text-center">Status</th>
+                    <th class="py-3.5 px-4 text-center">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody id="penugasan-table-body" class="divide-y divide-slate-100 text-slate-700">
+                  <tr>
+                    <td colspan="6" class="py-8 text-center text-slate-400">Memuat data penugasan...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- VIEW CONTAINER: MODUL DALAM PERSIAPAN (Placeholder modular Phase 5-8) -->
         <div id="view-placeholder" class="hidden">
           <div class="bg-white border border-slate-200 rounded-2xl p-8 sm:p-12 text-center shadow-xs">
             <div id="placeholder-icon-container" class="w-16 h-16 bg-blue-50 text-blue-700 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-blue-100">
@@ -308,6 +423,164 @@
   </div>
 
   <!-- ==================================================================== -->
+  <!-- MODALS PHASE 4 -->
+  <!-- ==================================================================== -->
+
+  <!-- Modal Tambah/Edit Tahun Ajaran -->
+  <div id="modal-ta-form" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 text-left">
+      <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
+        <h3 id="modal-ta-title" class="text-base font-bold text-slate-900">Tambah Tahun Ajaran Baru</h3>
+        <button type="button" onclick="closeModalTA()" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <form id="form-ta" onsubmit="handleTASubmit(event)" class="space-y-4">
+        <input type="hidden" id="ta-input-id" value="">
+
+        <div>
+          <label for="ta-input-tahun" class="block text-xs font-semibold text-slate-600 mb-1">Tahun Ajaran <span class="text-red-500">*</span></label>
+          <input type="text" id="ta-input-tahun" required placeholder="Contoh: 2026/2027"
+            class="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600">
+          <p class="text-[10px] text-slate-400 mt-1">Format: YYYY/YYYY (dua tahun berurutan).</p>
+        </div>
+
+        <div>
+          <label for="ta-select-semester" class="block text-xs font-semibold text-slate-600 mb-1">Semester <span class="text-red-500">*</span></label>
+          <select id="ta-select-semester" required
+            class="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-600">
+            <option value="Ganjil">Ganjil</option>
+            <option value="Genap">Genap</option>
+          </select>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label for="ta-input-mulai" class="block text-xs font-semibold text-slate-600 mb-1">Tanggal Mulai <span class="text-red-500">*</span></label>
+            <input type="date" id="ta-input-mulai" required
+              class="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600">
+          </div>
+          <div>
+            <label for="ta-input-selesai" class="block text-xs font-semibold text-slate-600 mb-1">Tanggal Selesai <span class="text-red-500">*</span></label>
+            <input type="date" id="ta-input-selesai" required
+              class="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600">
+          </div>
+        </div>
+
+        <div class="pt-2 space-y-2 border-t border-slate-100">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" id="ta-check-active" class="rounded text-blue-600 focus:ring-blue-500">
+            <span class="text-xs text-slate-700 font-medium">Jadikan sebagai Periode Aktif</span>
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" id="ta-check-locked" class="rounded text-amber-600 focus:ring-amber-500">
+            <span class="text-xs text-slate-700 font-medium">Kunci Periode (Data historis baca-saja)</span>
+          </label>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-4">
+          <button type="button" onclick="closeModalTA()"
+            class="px-4 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
+            Batal
+          </button>
+          <button type="submit" id="btn-save-ta"
+            class="px-5 py-2.5 text-xs font-semibold text-white bg-blue-700 hover:bg-blue-800 rounded-xl transition-all shadow-xs flex items-center gap-2">
+            <span id="ta-spinner" class="spinner w-3.5 h-3.5 border-2 border-white rounded-full hidden"></span>
+            <span id="ta-save-text">Simpan Periode</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal Tambah/Edit Penugasan Wali Kelas -->
+  <div id="modal-penugasan-form" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 text-left">
+      <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
+        <h3 id="modal-penugasan-title" class="text-base font-bold text-slate-900">Tambah Penugasan Wali Kelas</h3>
+        <button type="button" onclick="closeModalPenugasan()" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <form id="form-penugasan" onsubmit="handlePenugasanSubmit(event)" class="space-y-4">
+        <input type="hidden" id="penugasan-input-id" value="">
+
+        <div>
+          <label for="penugasan-select-ta" class="block text-xs font-semibold text-slate-600 mb-1">Tahun Ajaran &amp; Semester <span class="text-red-500">*</span></label>
+          <select id="penugasan-select-ta" required
+            class="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-600">
+            <!-- Pilihan tahun ajaran terisi otomatis via JS -->
+          </select>
+        </div>
+
+        <div>
+          <label for="penugasan-select-kelas" class="block text-xs font-semibold text-slate-600 mb-1">Kelas Yang Diampu <span class="text-red-500">*</span></label>
+          <select id="penugasan-select-kelas" required
+            class="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-600">
+            <option value="1">Kelas 1</option>
+            <option value="2">Kelas 2</option>
+            <option value="3">Kelas 3</option>
+            <option value="4">Kelas 4</option>
+            <option value="5">Kelas 5</option>
+            <option value="6">Kelas 6</option>
+          </select>
+        </div>
+
+        <div>
+          <label for="penugasan-select-guru" class="block text-xs font-semibold text-slate-600 mb-1">Guru Wali Kelas <span class="text-red-500">*</span></label>
+          <select id="penugasan-select-guru" required
+            class="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-600">
+            <!-- Pilihan guru wali kelas aktif via apiGetGuruWaliKelasOptions -->
+          </select>
+          <p class="text-[10px] text-slate-400 mt-1">Hanya menampilkan akun aktif berstatus wali kelas.</p>
+        </div>
+
+        <div class="pt-2 border-t border-slate-100">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" id="penugasan-check-active" checked class="rounded text-blue-600 focus:ring-blue-500">
+            <span class="text-xs text-slate-700 font-medium">Status Penugasan Aktif</span>
+          </label>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-4">
+          <button type="button" onclick="closeModalPenugasan()"
+            class="px-4 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
+            Batal
+          </button>
+          <button type="submit" id="btn-save-penugasan"
+            class="px-5 py-2.5 text-xs font-semibold text-white bg-blue-700 hover:bg-blue-800 rounded-xl transition-all shadow-xs flex items-center gap-2">
+            <span id="penugasan-spinner" class="spinner w-3.5 h-3.5 border-2 border-white rounded-full hidden"></span>
+            <span id="penugasan-save-text">Simpan Penugasan</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal Konfirmasi Umum (Hapus / Kunci) -->
+  <div id="modal-confirm" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 text-center">
+      <div id="confirm-icon-box" class="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+      </div>
+      <h3 id="confirm-title" class="text-base font-bold text-slate-900 mb-1">Konfirmasi Aksi</h3>
+      <p id="confirm-message" class="text-xs text-slate-500 mb-6">Apakah Anda yakin ingin melanjutkan tindakan ini?</p>
+      <div class="flex items-center justify-center gap-2">
+        <button type="button" onclick="closeConfirmModal()"
+          class="w-1/2 py-2.5 px-3 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors">
+          Batal
+        </button>
+        <button type="button" id="btn-confirm-action"
+          class="w-1/2 py-2.5 px-3 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-xl transition-colors shadow-xs">
+          Ya, Lanjutkan
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================================================================== -->
   <!-- JAVASCRIPT CLIENT-SIDE ARCHITECTURE -->
   <!-- ==================================================================== -->
   <script>
@@ -320,7 +593,10 @@
       schoolProfile: null,
       activeYear: null,
       dashboardData: null,
-      currentRoute: 'dashboard'
+      currentRoute: 'dashboard',
+      tahunAjaranList: [],
+      penugasanList: [],
+      guruOptions: []
     };
 
     // Konfigurasi Navigasi dan Metadata Modul Sesuai Role (PRD & Arsitektur)
@@ -336,14 +612,14 @@
         {
           id: 'tahun_ajaran',
           title: 'Tahun Ajaran',
-          phase: 'Phase 4',
+          phase: 'Phase 4 (Aktif)',
           desc: 'Pengelolaan periode akademik, semester, dan status kunci periode historis.',
           icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>'
         },
         {
           id: 'penugasan',
           title: 'Penugasan Wali Kelas',
-          phase: 'Phase 4',
+          phase: 'Phase 4 (Aktif)',
           desc: 'Penetapan guru wali kelas untuk Kelas 1–6 pada periode aktif.',
           icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>'
         },
@@ -447,7 +723,6 @@
     function callBackend(functionName, ...args) {
       return new Promise((resolve, reject) => {
         if (typeof google === 'undefined' || !google.script || !google.script.run) {
-          // Lingkungan pratinjau browser lokal tanpa runner GAS
           reject(new Error('Koneksi Google Apps Script tidak tersedia di lingkungan ini.'));
           return;
         }
@@ -527,7 +802,6 @@
       document.getElementById('view-login').classList.add('hidden');
       document.getElementById('view-app-shell').classList.remove('hidden');
 
-      // Update identitas user
       const displayName = user.nama || user.username;
       const displayRole = user.role === 'kepala_sekolah' ? 'Kepala Sekolah' : 'Wali Kelas';
       const initials = (displayName || 'U').split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
@@ -537,10 +811,7 @@
       document.getElementById('user-avatar-badge').textContent = initials;
       document.getElementById('header-role-label').textContent = displayRole;
 
-      // Inisialisasi Navigasi Menu berdasarkan role
       ViewController.buildNavigation(user.role);
-
-      // Muat data dashboard
       loadDashboardData();
     }
 
@@ -563,7 +834,6 @@
         return;
       }
 
-      // State Loading
       submitBtn.disabled = true;
       spinner.classList.remove('hidden');
       btnText.textContent = 'Memverifikasi...';
@@ -597,16 +867,14 @@
       if (token) {
         try {
           await callBackend('apiLogout', token);
-        } catch (e) {
-          // Abaikan kesalahan koneksi saat logout
-        }
+        } catch (e) {}
       }
       showToast('Anda telah keluar dari sistem.', 'info');
       showLoginView();
     }
 
     // ====================================================================
-    // VIEW CONTROLLER (Router Sederhana & Manajemen Halaman)
+    // VIEW CONTROLLER
     // ====================================================================
     const ViewController = {
       buildNavigation(role) {
@@ -660,21 +928,26 @@
           }
         });
 
-        // Update judul header
         document.getElementById('header-view-title').textContent = targetRoute.title;
 
-        // Toggle kontainer tampilan
-        const viewDashboard = document.getElementById('view-dashboard');
-        const viewPlaceholder = document.getElementById('view-placeholder');
+        // Sembunyikan seluruh kontainer tampilan
+        document.getElementById('view-dashboard').classList.add('hidden');
+        document.getElementById('view-tahun-ajaran').classList.add('hidden');
+        document.getElementById('view-penugasan').classList.add('hidden');
+        document.getElementById('view-placeholder').classList.add('hidden');
 
+        // Buka tampilan yang relevan
         if (routeId === 'dashboard') {
-          viewPlaceholder.classList.add('hidden');
-          viewDashboard.classList.remove('hidden');
+          document.getElementById('view-dashboard').classList.remove('hidden');
           renderDashboardContent(APP_STATE.dashboardData);
+        } else if (routeId === 'tahun_ajaran') {
+          document.getElementById('view-tahun-ajaran').classList.remove('hidden');
+          loadTahunAjaranList();
+        } else if (routeId === 'penugasan') {
+          document.getElementById('view-penugasan').classList.remove('hidden');
+          loadPenugasanList();
         } else {
-          viewDashboard.classList.add('hidden');
-          viewPlaceholder.classList.remove('hidden');
-
+          document.getElementById('view-placeholder').classList.remove('hidden');
           document.getElementById('placeholder-title').textContent = targetRoute.title;
           document.getElementById('placeholder-phase-badge').textContent = targetRoute.phase;
           document.getElementById('placeholder-description').textContent = targetRoute.desc;
@@ -682,17 +955,13 @@
       }
     };
 
-    // Muat data ringkasan dashboard awal dari server
+    // Muat ringkasan data dashboard awal
     async function loadDashboardData() {
       const stateLoading = document.getElementById('state-loading');
       const stateError = document.getElementById('state-error');
-      const viewDashboard = document.getElementById('view-dashboard');
-      const viewPlaceholder = document.getElementById('view-placeholder');
 
       stateLoading.classList.remove('hidden');
       stateError.classList.add('hidden');
-      viewDashboard.classList.add('hidden');
-      viewPlaceholder.classList.add('hidden');
 
       try {
         const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
@@ -703,7 +972,6 @@
           APP_STATE.schoolProfile = res.data.schoolProfile;
           APP_STATE.activeYear = res.data.activeYear;
 
-          // Update label sekolah & tahun ajaran di UI
           const schoolName = res.data.schoolProfile ? res.data.schoolProfile.namaSekolah : 'SD Negeri';
           document.getElementById('sidebar-school-title').textContent = schoolName;
           document.getElementById('header-school-name').textContent = schoolName;
@@ -717,7 +985,6 @@
           stateLoading.classList.add('hidden');
           ViewController.navigateTo(APP_STATE.currentRoute || 'dashboard');
         } else {
-          // Tangani sesi kedaluwarsa
           const errMsg = (res && res.message) || '';
           if (errMsg.includes('Sesi tidak valid') || errMsg.includes('kedaluwarsa') || errMsg.includes('Akses ditolak')) {
             showSessionExpiredModal(errMsg);
@@ -732,7 +999,7 @@
       }
     }
 
-    // Render Konten Dashboard Dinamis Berdasarkan Role
+    // Render Konten Dashboard Dinamis
     function renderDashboardContent(data) {
       const container = document.getElementById('view-dashboard');
       if (!data) return;
@@ -741,6 +1008,7 @@
       const summary = data.summary || {};
       const activeYear = data.activeYear;
       const isKepsek = user.role === 'kepala_sekolah';
+      const kelasOverview = data.kelasOverview || [];
 
       let html = '';
 
@@ -761,8 +1029,9 @@
             </p>
           </div>
           <div class="bg-white/10 p-3 rounded-xl backdrop-blur-md border border-white/20 text-center flex-shrink-0">
-            <div class="text-[10px] text-blue-200 uppercase font-semibold">Status Periode</div>
-            <div class="text-sm font-bold mt-0.5">${activeYear ? (activeYear.isLocked ? '🔒 Terkunci' : 'Aktif') : 'Nonaktif'}</div>
+            <div class="text-[10px] text-blue-200 uppercase font-semibold">Periode Aktif</div>
+            <div class="text-sm font-bold mt-0.5">${activeYear ? `${activeYear.tahunAjaran} ${activeYear.semester}` : 'Nonaktif'}</div>
+            <div class="text-[10px] text-blue-200 mt-0.5">${activeYear ? (activeYear.isLocked ? '🔒 Terkunci' : '✅ Terbuka') : '-'}</div>
           </div>
         </div>
       `;
@@ -771,7 +1040,7 @@
         // 2. Metric Cards untuk Kepala Sekolah
         html += `
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div class="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs">
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
               <div class="flex items-center justify-between text-slate-400 mb-2">
                 <span class="text-xs font-semibold text-slate-500 uppercase">Siswa Terdaftar</span>
                 <div class="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
@@ -782,9 +1051,9 @@
               <p class="text-[11px] text-slate-400 mt-1">Total siswa aktif di database</p>
             </div>
 
-            <div class="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs">
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
               <div class="flex items-center justify-between text-slate-400 mb-2">
-                <span class="text-xs font-semibold text-slate-500 uppercase">Wali Kelas Aktif</span>
+                <span class="text-xs font-semibold text-slate-500 uppercase">Guru Wali Kelas</span>
                 <div class="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
                 </div>
@@ -793,18 +1062,18 @@
               <p class="text-[11px] text-slate-400 mt-1">Guru berstatus wali kelas aktif</p>
             </div>
 
-            <div class="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs">
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
               <div class="flex items-center justify-between text-slate-400 mb-2">
-                <span class="text-xs font-semibold text-slate-500 uppercase">Kelas Ditugaskan</span>
+                <span class="text-xs font-semibold text-slate-500 uppercase">Kelas Terisi</span>
                 <div class="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
                 </div>
               </div>
-              <div class="text-2xl font-bold text-slate-900">${summary.totalKelasDitugaskan || 0} / ${summary.totalKelasMaksimal || 6}</div>
+              <div class="text-2xl font-bold text-slate-900">${summary.totalKelasDitugaskan || 0} / 6</div>
               <p class="text-[11px] text-slate-400 mt-1">Kelas 1–6 periode aktif</p>
             </div>
 
-            <div class="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs">
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
               <div class="flex items-center justify-between text-slate-400 mb-2">
                 <span class="text-xs font-semibold text-slate-500 uppercase">Status Sistem</span>
                 <div class="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
@@ -812,86 +1081,85 @@
                 </div>
               </div>
               <div class="text-xl font-bold text-emerald-600">Siap Operasi</div>
-              <p class="text-[11px] text-slate-400 mt-1">Database &amp; Sesi Terverifikasi</p>
+              <p class="text-[11px] text-slate-400 mt-1">Phase 4 Tervalidasi</p>
             </div>
           </div>
 
-          <!-- Modul Roadmap Box untuk Kepala Sekolah -->
-          <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
-            <h3 class="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4 flex items-center gap-2">
-              <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
-              <span>Akses Cepat Pengelolaan Sekolah</span>
-            </h3>
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div onclick="ViewController.navigateTo('tahun_ajaran')" class="p-4 rounded-xl border border-slate-100 bg-slate-50 hover:bg-blue-50/60 hover:border-blue-200 transition-all cursor-pointer group">
-                <div class="text-xs font-bold text-slate-800 group-hover:text-blue-700">1. Tahun Ajaran &amp; Semester</div>
-                <p class="text-[11px] text-slate-500 mt-1">Buka / kunci periode akademik baru untuk sekolah.</p>
+          <!-- 3. Rombel Kelas 1 - Kelas 6 Overview -->
+          <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+            <div class="flex items-center justify-between">
+              <div>
+                <h3 class="text-sm font-bold text-slate-900 uppercase tracking-wider">Pemetaan Wali Kelas (Kelas 1–6)</h3>
+                <p class="text-xs text-slate-500 mt-0.5">Penetapan guru pengampu per rombel kelas pada periode ${activeYear ? activeYear.tahunAjaran + ' ' + activeYear.semester : 'aktif'}.</p>
               </div>
-              <div onclick="ViewController.navigateTo('penugasan')" class="p-4 rounded-xl border border-slate-100 bg-slate-50 hover:bg-blue-50/60 hover:border-blue-200 transition-all cursor-pointer group">
-                <div class="text-xs font-bold text-slate-800 group-hover:text-blue-700">2. Penugasan Wali Kelas</div>
-                <p class="text-[11px] text-slate-500 mt-1">Tentukan guru pengampu untuk Kelas 1 sampai Kelas 6.</p>
-              </div>
-              <div onclick="ViewController.navigateTo('rapor_sekolah')" class="p-4 rounded-xl border border-slate-100 bg-slate-50 hover:bg-blue-50/60 hover:border-blue-200 transition-all cursor-pointer group">
-                <div class="text-xs font-bold text-slate-800 group-hover:text-blue-700">3. Rapor &amp; Rekapitulasi</div>
-                <p class="text-[11px] text-slate-500 mt-1">Pantau ranking agregat dan kemajuan pengisian rapor.</p>
-              </div>
+              <button type="button" onclick="ViewController.navigateTo('penugasan')"
+                class="px-3.5 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors">
+                Kelola Penugasan &rarr;
+              </button>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              ${kelasOverview.map(k => `
+                <div class="p-4 rounded-xl border ${k.isAssigned ? 'border-slate-200 bg-white hover:border-blue-300' : 'border-dashed border-amber-200 bg-amber-50/40'} transition-all flex items-start justify-between gap-3">
+                  <div class="flex items-start gap-3">
+                    <div class="w-10 h-10 rounded-xl ${k.isAssigned ? 'bg-blue-600 text-white' : 'bg-amber-100 text-amber-700'} font-bold flex items-center justify-center text-sm flex-shrink-0 shadow-xs">
+                      ${k.kelas}
+                    </div>
+                    <div>
+                      <div class="text-xs font-bold text-slate-900">Kelas ${k.kelas}</div>
+                      ${k.isAssigned ? `
+                        <div class="text-xs text-blue-700 font-medium truncate max-w-[150px]">${k.details.guruNama}</div>
+                        <div class="text-[10px] text-slate-400">NIP: ${k.details.guruNip} &bull; ${k.details.totalSiswa} Siswa</div>
+                      ` : `
+                        <div class="text-xs text-amber-700 font-medium">Belum Ada Wali Kelas</div>
+                        <div class="text-[10px] text-slate-400">Klik untuk tetapkan</div>
+                      `}
+                    </div>
+                  </div>
+                  <div>
+                    ${k.isAssigned ? `
+                      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">Terisi</span>
+                    ` : `
+                      <button type="button" onclick="openModalTambahPenugasanForKelas('${k.kelas}')" class="px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[10px] font-semibold transition-colors">
+                        + Tugaskan
+                      </button>
+                    `}
+                  </div>
+                </div>
+              `).join('')}
             </div>
           </div>
         `;
       } else {
-        // 2. Metric Cards / Empty State untuk Wali Kelas
+        // Wali Kelas Dashboard
         if (summary.hasAssignment) {
           html += `
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div class="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs">
+              <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
                 <div class="text-xs font-semibold text-slate-400 uppercase mb-1">Kelas Yang Diampu</div>
                 <div class="text-2xl font-bold text-blue-700">Kelas ${summary.kelas}</div>
                 <p class="text-[11px] text-slate-500 mt-1">Penugasan Semester Aktif</p>
               </div>
 
-              <div class="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs">
+              <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
                 <div class="text-xs font-semibold text-slate-400 uppercase mb-1">Jumlah Siswa Kelas</div>
                 <div class="text-2xl font-bold text-slate-900">${summary.totalSiswa || 0} Siswa</div>
                 <p class="text-[11px] text-slate-500 mt-1">Terdaftar dalam rombel kelas Anda</p>
               </div>
 
-              <div class="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs">
+              <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
                 <div class="text-xs font-semibold text-slate-400 uppercase mb-1">Kelengkapan Nilai</div>
                 <div class="text-2xl font-bold text-emerald-600">${summary.kelengkapanNilaiPersen || 0}%</div>
                 <p class="text-[11px] text-slate-500 mt-1">Komponen nilai Tugas, UTS, dan UAS</p>
               </div>
             </div>
-
-            <!-- Pintasan Modul Wali Kelas -->
-            <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
-              <h3 class="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4 flex items-center gap-2">
-                <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
-                <span>Aksi Utama Penilaian Kelas</span>
-              </h3>
-              <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div onclick="ViewController.navigateTo('siswa')" class="p-4 rounded-xl border border-slate-100 bg-slate-50 hover:bg-blue-50/60 hover:border-blue-200 transition-all cursor-pointer group">
-                  <div class="text-xs font-bold text-slate-800 group-hover:text-blue-700">1. Data Siswa Kelas</div>
-                  <p class="text-[11px] text-slate-500 mt-1">Periksa kelengkapan identitas dan nomor absen siswa.</p>
-                </div>
-                <div onclick="ViewController.navigateTo('input_nilai')" class="p-4 rounded-xl border border-slate-100 bg-slate-50 hover:bg-blue-50/60 hover:border-blue-200 transition-all cursor-pointer group">
-                  <div class="text-xs font-bold text-slate-800 group-hover:text-blue-700">2. Input Nilai Siswa</div>
-                  <p class="text-[11px] text-slate-500 mt-1">Masukkan nilai Tugas 1–4, UTS, dan UAS per mata pelajaran.</p>
-                </div>
-                <div onclick="ViewController.navigateTo('rapor_kelas')" class="p-4 rounded-xl border border-slate-100 bg-slate-50 hover:bg-blue-50/60 hover:border-blue-200 transition-all cursor-pointer group">
-                  <div class="text-xs font-bold text-slate-800 group-hover:text-blue-700">3. Rapor Digital &amp; Cetak</div>
-                  <p class="text-[11px] text-slate-500 mt-1">Lihat hasil akhir, ranking kelas, dan cetak rapor digital.</p>
-                </div>
-              </div>
-            </div>
           `;
         } else {
-          // EMPTY STATE JIKA BELUM ADA PENUGASAN WALI KELAS
+          // Empty state belum ditugaskan
           html += `
             <div class="bg-white rounded-2xl border border-amber-200 p-8 sm:p-12 text-center shadow-xs">
               <div class="w-14 h-14 bg-amber-50 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-4 border border-amber-200">
-                <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
-                </svg>
+                <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
               </div>
               <h3 class="text-lg font-bold text-slate-900 mb-1">Belum Ada Penugasan Kelas Aktif</h3>
               <p class="text-sm text-slate-500 max-w-md mx-auto mb-6">
@@ -908,6 +1176,571 @@
       container.innerHTML = html;
     }
 
+    // ====================================================================
+    // LOGIKA MODUL 1: TAHUN AJARAN & SEMESTER (Phase 4)
+    // ====================================================================
+    async function loadTahunAjaranList() {
+      const tbody = document.getElementById('ta-table-body');
+      tbody.innerHTML = '<tr><td colspan="8" class="py-8 text-center text-slate-400">Memuat data tahun ajaran...</td></tr>';
+
+      try {
+        const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+        const res = await callBackend('apiGetTahunAjaranList', token);
+
+        if (res && res.success && Array.isArray(res.data)) {
+          APP_STATE.tahunAjaranList = res.data;
+          renderTahunAjaranTable(res.data);
+        } else {
+          tbody.innerHTML = `<tr><td colspan="8" class="py-8 text-center text-red-500 font-medium">${(res && res.message) || 'Gagal memuat tahun ajaran.'}</td></tr>`;
+        }
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="8" class="py-8 text-center text-red-500 font-medium">Kesalahan koneksi saat memuat tahun ajaran.</td></tr>`;
+      }
+    }
+
+    function renderTahunAjaranTable(list) {
+      const tbody = document.getElementById('ta-table-body');
+      if (!list || list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="py-8 text-center text-slate-400">Belum ada periode tahun ajaran. Klik "+ Tambah Periode" untuk membuat kalender akademik baru.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = list.map((item, idx) => `
+        <tr class="hover:bg-slate-50/70 transition-colors">
+          <td class="py-3.5 px-4 text-center font-semibold text-slate-400">${idx + 1}</td>
+          <td class="py-3.5 px-4 font-bold text-slate-900">${item.tahun_ajaran}</td>
+          <td class="py-3.5 px-4">
+            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${item.semester === 'Ganjil' ? 'bg-indigo-50 text-indigo-700' : 'bg-purple-50 text-purple-700'}">
+              ${item.semester}
+            </span>
+          </td>
+          <td class="py-3.5 px-4 text-slate-600 font-mono text-[11px]">${item.tanggal_mulai || '-'} s/d ${item.tanggal_selesai || '-'}</td>
+          <td class="py-3.5 px-4 text-center">
+            ${item.is_active ? `
+              <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Aktif
+              </span>
+            ` : `
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-500">
+                Nonaktif
+              </span>
+            `}
+          </td>
+          <td class="py-3.5 px-4 text-center">
+            ${item.is_locked ? `
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                🔒 Terkunci
+              </span>
+            ` : `
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                Terbuka
+              </span>
+            `}
+          </td>
+          <td class="py-3.5 px-4 text-center text-slate-500">
+            ${item.hasRelations ? '<span class="text-blue-600 font-medium">Ada Relasi</span>' : '<span class="text-slate-400">Kosong</span>'}
+          </td>
+          <td class="py-3.5 px-4 text-center">
+            <div class="inline-flex items-center gap-1.5">
+              ${!item.is_locked ? `
+                <button type="button" onclick="openModalEditTahunAjaran('${item.id}')"
+                  class="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Edit">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                </button>
+              ` : ''}
+
+              ${!item.is_active && !item.is_locked ? `
+                <button type="button" onclick="confirmAktifkanTA('${item.id}')"
+                  class="px-2 py-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors" title="Jadikan Aktif">
+                  Aktifkan
+                </button>
+              ` : ''}
+
+              <button type="button" onclick="confirmToggleLockTA('${item.id}', ${!item.is_locked})"
+                class="p-1.5 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors" title="${item.is_locked ? 'Buka Kunci' : 'Kunci Periode'}">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${item.is_locked ? 'M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z' : 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z'}"/></svg>
+              </button>
+
+              ${!item.is_active && !item.hasRelations ? `
+                <button type="button" onclick="confirmDeleteTA('${item.id}')"
+                  class="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Hapus">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                </button>
+              ` : ''}
+            </div>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function openModalTambahTahunAjaran() {
+      document.getElementById('modal-ta-title').textContent = 'Tambah Tahun Ajaran Baru';
+      document.getElementById('ta-input-id').value = '';
+      document.getElementById('ta-input-tahun').value = '';
+      document.getElementById('ta-select-semester').value = 'Ganjil';
+      document.getElementById('ta-input-mulai').value = '';
+      document.getElementById('ta-input-selesai').value = '';
+      document.getElementById('ta-check-active').checked = true;
+      document.getElementById('ta-check-locked').checked = false;
+      document.getElementById('modal-ta-form').classList.remove('hidden');
+    }
+
+    function openModalEditTahunAjaran(id) {
+      const item = APP_STATE.tahunAjaranList.find(t => t.id === id);
+      if (!item) return;
+
+      document.getElementById('modal-ta-title').textContent = 'Edit Periode Tahun Ajaran';
+      document.getElementById('ta-input-id').value = item.id;
+      document.getElementById('ta-input-tahun').value = item.tahun_ajaran;
+      document.getElementById('ta-select-semester').value = item.semester;
+      document.getElementById('ta-input-mulai').value = item.tanggal_mulai || '';
+      document.getElementById('ta-input-selesai').value = item.tanggal_selesai || '';
+      document.getElementById('ta-check-active').checked = !!item.is_active;
+      document.getElementById('ta-check-locked').checked = !!item.is_locked;
+      document.getElementById('modal-ta-form').classList.remove('hidden');
+    }
+
+    function closeModalTA() {
+      document.getElementById('modal-ta-form').classList.add('hidden');
+    }
+
+    async function handleTASubmit(e) {
+      e.preventDefault();
+      const id = document.getElementById('ta-input-id').value;
+      const tahun_ajaran = document.getElementById('ta-input-tahun').value.trim();
+      const semester = document.getElementById('ta-select-semester').value;
+      const tanggal_mulai = document.getElementById('ta-input-mulai').value;
+      const tanggal_selesai = document.getElementById('ta-input-selesai').value;
+      const is_active = document.getElementById('ta-check-active').checked;
+      const is_locked = document.getElementById('ta-check-locked').checked;
+
+      const btn = document.getElementById('btn-save-ta');
+      const spinner = document.getElementById('ta-spinner');
+      const txt = document.getElementById('ta-save-text');
+
+      btn.disabled = true;
+      spinner.classList.remove('hidden');
+      txt.textContent = 'Menyimpan...';
+
+      try {
+        const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+        const payload = { id, tahun_ajaran, semester, tanggal_mulai, tanggal_selesai, is_active, is_locked };
+        const res = await callBackend('apiSaveTahunAjaran', token, payload);
+
+        if (res && res.success) {
+          showToast(res.message || 'Tahun ajaran berhasil disimpan.', 'success');
+          closeModalTA();
+          loadTahunAjaranList();
+          loadDashboardData(); // Segarkan badge periode aktif di sidebar
+        } else {
+          showToast((res && res.message) || 'Gagal menyimpan tahun ajaran.', 'error');
+        }
+      } catch (err) {
+        showToast('Kesalahan server saat menyimpan tahun ajaran.', 'error');
+      } finally {
+        btn.disabled = false;
+        spinner.classList.add('hidden');
+        txt.textContent = 'Simpan Periode';
+      }
+    }
+
+    function confirmAktifkanTA(id) {
+      openConfirmModal(
+        'Aktifkan Periode Akademik',
+        'Mengaktifkan periode ini akan otomatis menonaktifkan status aktif pada periode tahun ajaran lainnya. Lanjutkan?',
+        'bg-blue-600 hover:bg-blue-700',
+        async () => {
+          const item = APP_STATE.tahunAjaranList.find(t => t.id === id);
+          if (!item) return;
+          const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+          const payload = { ...item, is_active: true };
+          const res = await callBackend('apiSaveTahunAjaran', token, payload);
+          if (res && res.success) {
+            showToast('Periode berhasil diaktifkan.', 'success');
+            loadTahunAjaranList();
+            loadDashboardData();
+          } else {
+            showToast((res && res.message) || 'Gagal mengaktifkan periode.', 'error');
+          }
+        }
+      );
+    }
+
+    function confirmToggleLockTA(id, lockStatus) {
+      const actionText = lockStatus ? 'Mengunci' : 'Membuka Kunci';
+      const desc = lockStatus
+        ? 'Periode yang dikunci akan menjadi baca-saja. Penugasan, siswa, dan nilai pada periode ini tidak dapat diedit lagi.'
+        : 'Membuka kunci memungkinkan perubahan data kembali dilakukan oleh kepala sekolah.';
+
+      openConfirmModal(
+        `${actionText} Periode`,
+        desc,
+        lockStatus ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-600 hover:bg-blue-700',
+        async () => {
+          const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+          const res = await callBackend('apiToggleLockTahunAjaran', token, id, lockStatus);
+          if (res && res.success) {
+            showToast(res.message, 'success');
+            loadTahunAjaranList();
+            loadDashboardData();
+          } else {
+            showToast((res && res.message) || 'Gagal mengubah status kunci periode.', 'error');
+          }
+        }
+      );
+    }
+
+    function confirmDeleteTA(id) {
+      openConfirmModal(
+        'Hapus Tahun Ajaran',
+        'Apakah Anda yakin ingin menghapus periode tahun ajaran ini? Operasi ini hanya berhasil jika periode belum memiliki relasi penugasan.',
+        'bg-red-600 hover:bg-red-700',
+        async () => {
+          const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+          const res = await callBackend('apiDeleteTahunAjaran', token, id);
+          if (res && res.success) {
+            showToast('Tahun ajaran berhasil dihapus.', 'success');
+            loadTahunAjaranList();
+            loadDashboardData();
+          } else {
+            showToast((res && res.message) || 'Gagal menghapus tahun ajaran.', 'error');
+          }
+        }
+      );
+    }
+
+    // ====================================================================
+    // LOGIKA MODUL 2: PENUGASAN WALI KELAS (Phase 4)
+    // ====================================================================
+    async function loadPenugasanList() {
+      const tbody = document.getElementById('penugasan-table-body');
+      tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-400">Memuat data penugasan wali kelas...</td></tr>';
+
+      try {
+        const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+
+        // Ambil daftar tahun ajaran untuk dropdown filter jika belum ada
+        if (APP_STATE.tahunAjaranList.length === 0) {
+          const resTa = await callBackend('apiGetTahunAjaranList', token);
+          if (resTa && resTa.success) {
+            APP_STATE.tahunAjaranList = resTa.data;
+          }
+        }
+
+        populatePenugasanFilterDropdown();
+
+        const filterSelect = document.getElementById('penugasan-filter-ta');
+        const selectedTaId = filterSelect.value || (APP_STATE.activeYear ? APP_STATE.activeYear.id : '');
+
+        const res = await callBackend('apiGetPenugasanList', token, selectedTaId || undefined);
+
+        if (res && res.success && Array.isArray(res.data)) {
+          APP_STATE.penugasanList = res.data;
+          renderPenugasanTable(res.data);
+          renderClassVisualCards(res.data);
+        } else {
+          tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-red-500 font-medium">${(res && res.message) || 'Gagal memuat penugasan.'}</td></tr>`;
+        }
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-red-500 font-medium">Kesalahan koneksi saat memuat penugasan.</td></tr>`;
+      }
+    }
+
+    function populatePenugasanFilterDropdown() {
+      const select = document.getElementById('penugasan-filter-ta');
+      const curVal = select.value;
+      let html = '<option value="">Semua Periode</option>';
+
+      APP_STATE.tahunAjaranList.forEach(ta => {
+        const isSelected = (!curVal && ta.is_active) || curVal === ta.id ? 'selected' : '';
+        html += `<option value="${ta.id}" ${isSelected}>${ta.tahun_ajaran} (${ta.semester}) ${ta.is_active ? '— Aktif' : ''}</option>`;
+      });
+
+      select.innerHTML = html;
+    }
+
+    function handlePenugasanFilterChange() {
+      loadPenugasanList();
+    }
+
+    function renderPenugasanTable(list) {
+      const tbody = document.getElementById('penugasan-table-body');
+      if (!list || list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-400">Belum ada penugasan wali kelas untuk periode ini. Klik "+ Tambah Penugasan" untuk menugaskan guru ke kelas.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = list.map(item => `
+        <tr class="hover:bg-slate-50/70 transition-colors">
+          <td class="py-3.5 px-4 text-center">
+            <span class="inline-flex items-center justify-center w-8 h-8 rounded-xl font-bold text-xs bg-blue-100 text-blue-800">
+              ${item.kelas}
+            </span>
+          </td>
+          <td class="py-3.5 px-4">
+            <div class="font-bold text-slate-900">${item.guruNama}</div>
+            <div class="text-[11px] text-slate-400 font-mono">NIP: ${item.guruNip} &bull; @${item.guruUsername}</div>
+          </td>
+          <td class="py-3.5 px-4 text-slate-600">
+            <span class="font-medium">${item.tahunAjaran}</span> (${item.semester})
+            ${item.isTahunAjaranLocked ? '<span class="text-amber-600 text-[10px] ml-1 font-semibold">🔒 Terkunci</span>' : ''}
+          </td>
+          <td class="py-3.5 px-4 text-center">
+            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700">
+              ${item.totalSiswa} Siswa
+            </span>
+          </td>
+          <td class="py-3.5 px-4 text-center">
+            ${item.is_active ? `
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                Aktif
+              </span>
+            ` : `
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-500">
+                Nonaktif
+              </span>
+            `}
+          </td>
+          <td class="py-3.5 px-4 text-center">
+            <div class="inline-flex items-center gap-1.5">
+              ${!item.isTahunAjaranLocked ? `
+                <button type="button" onclick="openModalEditPenugasan('${item.id}')"
+                  class="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Edit Penugasan">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                </button>
+
+                <button type="button" onclick="confirmToggleStatusPenugasan('${item.id}', ${!item.is_active})"
+                  class="px-2 py-1 text-[10px] font-semibold ${item.is_active ? 'text-amber-700 bg-amber-50 hover:bg-amber-100' : 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100'} rounded-lg transition-colors">
+                  ${item.is_active ? 'Nonaktifkan' : 'Aktifkan'}
+                </button>
+              ` : ''}
+
+              ${!item.isTahunAjaranLocked && item.totalSiswa === 0 ? `
+                <button type="button" onclick="confirmDeletePenugasan('${item.id}')"
+                  class="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Hapus Penugasan">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                </button>
+              ` : ''}
+            </div>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function renderClassVisualCards(list) {
+      const container = document.getElementById('penugasan-class-cards');
+      let html = '';
+
+      for (let k = 1; k <= 6; k++) {
+        const kStr = String(k);
+        const match = list.find(item => item.kelas === kStr && item.is_active);
+
+        if (match) {
+          html += `
+            <div class="p-3 rounded-xl border border-blue-200 bg-blue-50/50 text-center">
+              <div class="text-xs font-bold text-blue-900">Kelas ${k}</div>
+              <div class="text-[11px] font-semibold text-blue-700 truncate mt-0.5" title="${match.guruNama}">${match.guruNama}</div>
+              <div class="text-[10px] text-slate-500 mt-1">${match.totalSiswa} Siswa</div>
+            </div>
+          `;
+        } else {
+          html += `
+            <div class="p-3 rounded-xl border border-dashed border-amber-300 bg-amber-50/30 text-center flex flex-col justify-between">
+              <div>
+                <div class="text-xs font-bold text-amber-900">Kelas ${k}</div>
+                <div class="text-[10px] text-amber-600 mt-0.5">Kosong</div>
+              </div>
+              <button type="button" onclick="openModalTambahPenugasanForKelas('${k}')"
+                class="mt-2 text-[10px] font-bold text-blue-700 hover:underline">
+                + Tugaskan
+              </button>
+            </div>
+          `;
+        }
+      }
+
+      container.innerHTML = html;
+    }
+
+    async function ensureGuruOptionsLoaded() {
+      if (APP_STATE.guruOptions.length === 0) {
+        const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+        const res = await callBackend('apiGetGuruWaliKelasOptions', token);
+        if (res && res.success && Array.isArray(res.data)) {
+          APP_STATE.guruOptions = res.data;
+        }
+      }
+
+      const selectGuru = document.getElementById('penugasan-select-guru');
+      if (APP_STATE.guruOptions.length === 0) {
+        selectGuru.innerHTML = '<option value="">Tidak ada akun guru wali kelas aktif</option>';
+      } else {
+        selectGuru.innerHTML = APP_STATE.guruOptions.map(g => `
+          <option value="${g.id}">${g.nama} (${g.nip !== '-' ? 'NIP: ' + g.nip : '@' + g.username})</option>
+        `).join('');
+      }
+    }
+
+    function populatePenugasanModalTahunAjaranSelect(selectedId) {
+      const selectTa = document.getElementById('penugasan-select-ta');
+      const unlockedList = APP_STATE.tahunAjaranList.filter(t => !t.is_locked);
+
+      if (unlockedList.length === 0) {
+        selectTa.innerHTML = '<option value="">Tidak ada tahun ajaran terbuka</option>';
+      } else {
+        selectTa.innerHTML = unlockedList.map(t => `
+          <option value="${t.id}" ${(selectedId === t.id || (!selectedId && t.is_active)) ? 'selected' : ''}>
+            ${t.tahun_ajaran} (${t.semester}) ${t.is_active ? '— Aktif' : ''}
+          </option>
+        `).join('');
+      }
+    }
+
+    async function openModalTambahPenugasan() {
+      document.getElementById('modal-penugasan-title').textContent = 'Tambah Penugasan Wali Kelas';
+      document.getElementById('penugasan-input-id').value = '';
+      document.getElementById('penugasan-select-kelas').value = '1';
+      document.getElementById('penugasan-check-active').checked = true;
+
+      const filterTa = document.getElementById('penugasan-filter-ta').value;
+      populatePenugasanModalTahunAjaranSelect(filterTa);
+      await ensureGuruOptionsLoaded();
+
+      document.getElementById('modal-penugasan-form').classList.remove('hidden');
+    }
+
+    async function openModalTambahPenugasanForKelas(kelas) {
+      await openModalTambahPenugasan();
+      document.getElementById('penugasan-select-kelas').value = String(kelas);
+    }
+
+    async function openModalEditPenugasan(id) {
+      const item = APP_STATE.penugasanList.find(p => p.id === id);
+      if (!item) return;
+
+      document.getElementById('modal-penugasan-title').textContent = 'Edit Penugasan Wali Kelas';
+      document.getElementById('penugasan-input-id').value = item.id;
+      document.getElementById('penugasan-select-kelas').value = item.kelas;
+      document.getElementById('penugasan-check-active').checked = !!item.is_active;
+
+      populatePenugasanModalTahunAjaranSelect(item.tahun_ajaran_id);
+      await ensureGuruOptionsLoaded();
+
+      document.getElementById('penugasan-select-guru').value = item.user_id;
+      document.getElementById('modal-penugasan-form').classList.remove('hidden');
+    }
+
+    function closeModalPenugasan() {
+      document.getElementById('modal-penugasan-form').classList.add('hidden');
+    }
+
+    async function handlePenugasanSubmit(e) {
+      e.preventDefault();
+      const id = document.getElementById('penugasan-input-id').value;
+      const tahun_ajaran_id = document.getElementById('penugasan-select-ta').value;
+      const kelas = document.getElementById('penugasan-select-kelas').value;
+      const user_id = document.getElementById('penugasan-select-guru').value;
+      const is_active = document.getElementById('penugasan-check-active').checked;
+
+      if (!tahun_ajaran_id || !user_id || !kelas) {
+        showToast('Tahun ajaran, kelas, dan guru wali kelas wajib dipilih.', 'error');
+        return;
+      }
+
+      const btn = document.getElementById('btn-save-penugasan');
+      const spinner = document.getElementById('penugasan-spinner');
+      const txt = document.getElementById('penugasan-save-text');
+
+      btn.disabled = true;
+      spinner.classList.remove('hidden');
+      txt.textContent = 'Menyimpan...';
+
+      try {
+        const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+        const payload = { id, tahun_ajaran_id, kelas, user_id, is_active };
+        const res = await callBackend('apiSavePenugasan', token, payload);
+
+        if (res && res.success) {
+          showToast(res.message || 'Penugasan berhasil disimpan.', 'success');
+          closeModalPenugasan();
+          loadPenugasanList();
+          loadDashboardData();
+        } else {
+          showToast((res && res.message) || 'Gagal menyimpan penugasan.', 'error');
+        }
+      } catch (err) {
+        showToast('Kesalahan server saat menyimpan penugasan.', 'error');
+      } finally {
+        btn.disabled = false;
+        spinner.classList.add('hidden');
+        txt.textContent = 'Simpan Penugasan';
+      }
+    }
+
+    function confirmToggleStatusPenugasan(id, activeStatus) {
+      const actionText = activeStatus ? 'Aktifkan' : 'Nonaktifkan';
+      openConfirmModal(
+        `${actionText} Penugasan`,
+        `Apakah Anda yakin ingin mengubah status penugasan ini menjadi ${activeStatus ? 'Aktif' : 'Nonaktif'}?`,
+        activeStatus ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-amber-600 hover:bg-amber-700',
+        async () => {
+          const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+          const res = await callBackend('apiToggleStatusPenugasan', token, id, activeStatus);
+          if (res && res.success) {
+            showToast(res.message, 'success');
+            loadPenugasanList();
+            loadDashboardData();
+          } else {
+            showToast((res && res.message) || 'Gagal mengubah status penugasan.', 'error');
+          }
+        }
+      );
+    }
+
+    function confirmDeletePenugasan(id) {
+      openConfirmModal(
+        'Hapus Penugasan Wali Kelas',
+        'Apakah Anda yakin ingin menghapus penugasan ini? Tindakan ini hanya diperbolehkan jika belum ada data siswa yang terkait.',
+        'bg-red-600 hover:bg-red-700',
+        async () => {
+          const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+          const res = await callBackend('apiDeletePenugasan', token, id);
+          if (res && res.success) {
+            showToast('Penugasan berhasil dihapus.', 'success');
+            loadPenugasanList();
+            loadDashboardData();
+          } else {
+            showToast((res && res.message) || 'Gagal menghapus penugasan.', 'error');
+          }
+        }
+      );
+    }
+
+    // Modal Konfirmasi Umum
+    let confirmCallback = null;
+    function openConfirmModal(title, msg, btnClass, onConfirm) {
+      document.getElementById('confirm-title').textContent = title;
+      document.getElementById('confirm-message').textContent = msg;
+
+      const confirmBtn = document.getElementById('btn-confirm-action');
+      confirmBtn.className = `w-1/2 py-2.5 px-3 text-xs font-semibold text-white rounded-xl transition-colors shadow-xs ${btnClass}`;
+
+      confirmCallback = onConfirm;
+      confirmBtn.onclick = async () => {
+        closeConfirmModal();
+        if (typeof confirmCallback === 'function') {
+          await confirmCallback();
+        }
+      };
+
+      document.getElementById('modal-confirm').classList.remove('hidden');
+    }
+
+    function closeConfirmModal() {
+      document.getElementById('modal-confirm').classList.add('hidden');
+      confirmCallback = null;
+    }
+
     // Inisialisasi awal saat halaman dimuat
     document.addEventListener('DOMContentLoaded', async () => {
       const storedToken = localStorage.getItem(STORAGE_KEY);
@@ -919,9 +1752,7 @@
             showAppShellView(res.data);
             return;
           }
-        } catch (e) {
-          // Abaikan kesalahan koneksi atau token tidak valid
-        }
+        } catch (e) {}
         localStorage.removeItem(STORAGE_KEY);
       }
       showLoginView();
