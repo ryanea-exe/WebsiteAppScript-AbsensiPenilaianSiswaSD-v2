@@ -394,6 +394,215 @@
           </div>
         </div>
 
+        <!-- VIEW CONTAINER: PENGGUNA (Phase 5 - Kepala Sekolah) -->
+        <div id="view-pengguna" class="hidden space-y-6">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+            <div>
+              <h2 class="text-base sm:text-lg font-bold text-slate-900">Manajemen Pengguna</h2>
+              <p class="text-xs text-slate-500">Kelola akun guru wali kelas dan hak akses sistem.</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2.5">
+              <div class="relative">
+                <input type="text" id="user-search-input" oninput="handleUserSearch(this.value)" placeholder="Cari nama / username..."
+                  class="pl-8 pr-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600 w-44 sm:w-56">
+                <svg class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+              </div>
+              <button type="button" onclick="openModalTambahUser()"
+                class="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white text-xs font-semibold rounded-xl transition-all shadow-xs">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                <span>+ Tambah Pengguna</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead class="bg-slate-50/70 border-b border-slate-200 text-slate-500 font-semibold uppercase text-[10px] tracking-wider">
+                  <tr>
+                    <th class="py-3.5 px-4">Nama Lengkap &amp; Username</th>
+                    <th class="py-3.5 px-4">NIP</th>
+                    <th class="py-3.5 px-4">Role Akses</th>
+                    <th class="py-3.5 px-4 text-center">Status Akun</th>
+                    <th class="py-3.5 px-4">Terakhir Login</th>
+                    <th class="py-3.5 px-4 text-center">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody id="users-table-body" class="divide-y divide-slate-100 text-slate-700">
+                  <tr>
+                    <td colspan="6" class="py-8 text-center text-slate-400">Memuat data pengguna...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- VIEW CONTAINER: SISWA (Phase 5 - Wali Kelas) -->
+        <div id="view-siswa" class="hidden space-y-6">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+            <div>
+              <div class="flex items-center gap-2 mb-1">
+                <span id="siswa-header-class-badge" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">Kelas</span>
+                <span id="siswa-header-period-badge" class="text-xs text-slate-400 font-medium">Periode</span>
+              </div>
+              <h2 id="siswa-view-heading" class="text-base sm:text-lg font-bold text-slate-900">Data Siswa</h2>
+              <p class="text-xs text-slate-500">Kelola identitas, NISN, dan nomor absen siswa di kelas yang diampu.</p>
+            </div>
+            <div class="flex items-center gap-2.5">
+              <button type="button" id="btn-tambah-siswa" onclick="openModalTambahSiswa()"
+                class="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white text-xs font-semibold rounded-xl transition-all shadow-xs">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                <span>+ Tambah Siswa</span>
+              </button>
+            </div>
+          </div>
+
+          <div id="siswa-locked-banner" class="hidden p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-3">
+            <svg class="w-5 h-5 flex-shrink-0 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+            <div>
+              <div class="font-bold">Periode Akademik Terkunci (Read-Only)</div>
+              <div class="text-[11px] text-amber-700">Tahun ajaran ini telah ditutup oleh Kepala Sekolah. Data siswa bersifat baca-saja dan tidak dapat ditambah atau diubah.</div>
+            </div>
+          </div>
+
+          <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead class="bg-slate-50/70 border-b border-slate-200 text-slate-500 font-semibold uppercase text-[10px] tracking-wider">
+                  <tr>
+                    <th class="py-3.5 px-4 text-center w-20">No. Absen</th>
+                    <th class="py-3.5 px-4">Nama Siswa</th>
+                    <th class="py-3.5 px-4">NISN / NIS</th>
+                    <th class="py-3.5 px-4 text-center">L/P</th>
+                    <th class="py-3.5 px-4 text-center">Status</th>
+                    <th class="py-3.5 px-4 text-center">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody id="siswa-table-body" class="divide-y divide-slate-100 text-slate-700">
+                  <tr>
+                    <td colspan="6" class="py-8 text-center text-slate-400">Memuat data siswa...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- VIEW CONTAINER: MATA PELAJARAN (Phase 5 - Wali Kelas) -->
+        <div id="view-mata-pelajaran" class="hidden space-y-6">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+            <div>
+              <div class="flex items-center gap-2 mb-1">
+                <span id="mapel-header-class-badge" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">Kelas</span>
+                <span id="mapel-header-period-badge" class="text-xs text-slate-400 font-medium">Periode</span>
+              </div>
+              <h2 id="mapel-view-heading" class="text-base sm:text-lg font-bold text-slate-900">Mata Pelajaran Kelas</h2>
+              <p class="text-xs text-slate-500">Kelola kurikulum mata pelajaran yang diajarkan pada kelas aktif.</p>
+            </div>
+            <div class="flex items-center gap-2.5">
+              <button type="button" id="btn-tambah-mapel" onclick="openModalTambahMapel()"
+                class="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white text-xs font-semibold rounded-xl transition-all shadow-xs">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                <span>+ Tambah Mata Pelajaran</span>
+              </button>
+            </div>
+          </div>
+
+          <div id="mapel-locked-banner" class="hidden p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-3">
+            <svg class="w-5 h-5 flex-shrink-0 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+            <div>
+              <div class="font-bold">Periode Akademik Terkunci (Read-Only)</div>
+              <div class="text-[11px] text-amber-700">Tahun ajaran ini telah ditutup oleh Kepala Sekolah. Mata pelajaran bersifat baca-saja.</div>
+            </div>
+          </div>
+
+          <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead class="bg-slate-50/70 border-b border-slate-200 text-slate-500 font-semibold uppercase text-[10px] tracking-wider">
+                  <tr>
+                    <th class="py-3.5 px-4 w-32">Kode Mapel</th>
+                    <th class="py-3.5 px-4">Nama Mata Pelajaran</th>
+                    <th class="py-3.5 px-4 text-center">Riwayat Nilai</th>
+                    <th class="py-3.5 px-4 text-center">Status</th>
+                    <th class="py-3.5 px-4 text-center">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody id="mapel-table-body" class="divide-y divide-slate-100 text-slate-700">
+                  <tr>
+                    <td colspan="5" class="py-8 text-center text-slate-400">Memuat data mata pelajaran...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- VIEW CONTAINER: SISWA & MAPEL (Phase 5 - Kepala Sekolah) -->
+        <div id="view-siswa-mapel" class="hidden space-y-6">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+            <div>
+              <h2 class="text-base sm:text-lg font-bold text-slate-900">Monitoring Siswa &amp; Mata Pelajaran</h2>
+              <p class="text-xs text-slate-500">Pratinjau data siswa dan mata pelajaran per rombel kelas.</p>
+            </div>
+            <div class="flex items-center gap-3">
+              <label for="select-siswa-mapel-kelas" class="text-xs font-semibold text-slate-600">Pilih Kelas:</label>
+              <select id="select-siswa-mapel-kelas" onchange="loadSiswaMapelOverview(this.value)"
+                class="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600">
+                <option value="">Memuat kelas...</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Kolom Siswa -->
+            <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+              <div class="p-4 bg-slate-50/70 border-b border-slate-200 flex items-center justify-between">
+                <h3 class="text-xs font-bold text-slate-800 uppercase tracking-wider">Daftar Siswa Rombel</h3>
+                <span id="overview-siswa-count-badge" class="px-2 py-0.5 text-[10px] font-bold bg-blue-100 text-blue-800 rounded-full">0 Siswa</span>
+              </div>
+              <div class="overflow-x-auto max-h-[450px] custom-scroll">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-slate-50 text-slate-400 font-semibold uppercase text-[10px] sticky top-0">
+                    <tr>
+                      <th class="py-2.5 px-3 text-center">No</th>
+                      <th class="py-2.5 px-3">Nama</th>
+                      <th class="py-2.5 px-3">NISN / NIS</th>
+                      <th class="py-2.5 px-3 text-center">L/P</th>
+                    </tr>
+                  </thead>
+                  <tbody id="overview-siswa-table-body" class="divide-y divide-slate-100 text-slate-700">
+                    <tr><td colspan="4" class="py-6 text-center text-slate-400">Pilih kelas untuk memuat siswa.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Kolom Mata Pelajaran -->
+            <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+              <div class="p-4 bg-slate-50/70 border-b border-slate-200 flex items-center justify-between">
+                <h3 class="text-xs font-bold text-slate-800 uppercase tracking-wider">Mata Pelajaran Kurikulum</h3>
+                <span id="overview-mapel-count-badge" class="px-2 py-0.5 text-[10px] font-bold bg-emerald-100 text-emerald-800 rounded-full">0 Mapel</span>
+              </div>
+              <div class="overflow-x-auto max-h-[450px] custom-scroll">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-slate-50 text-slate-400 font-semibold uppercase text-[10px] sticky top-0">
+                    <tr>
+                      <th class="py-2.5 px-3">Kode</th>
+                      <th class="py-2.5 px-3">Mata Pelajaran</th>
+                      <th class="py-2.5 px-3 text-center">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="overview-mapel-table-body" class="divide-y divide-slate-100 text-slate-700">
+                    <tr><td colspan="3" class="py-6 text-center text-slate-400">Pilih kelas untuk memuat mapel.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- VIEW CONTAINER: MODUL DALAM PERSIAPAN (Placeholder modular Phase 5-8) -->
         <div id="view-placeholder" class="hidden">
           <div class="bg-white border border-slate-200 rounded-2xl p-8 sm:p-12 text-center shadow-xs">
@@ -559,6 +768,247 @@
     </div>
   </div>
 
+  <!-- Modal Tambah/Edit Pengguna (Phase 5 - Kepala Sekolah) -->
+  <div id="modal-user-form" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 text-left">
+      <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
+        <h3 id="modal-user-title" class="text-base font-bold text-slate-900">Tambah Pengguna Baru</h3>
+        <button type="button" onclick="closeModalUser()" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <form id="form-user" onsubmit="handleUserSubmit(event)" class="space-y-3.5">
+        <input type="hidden" id="user-input-id" value="">
+
+        <div>
+          <label for="user-input-nama" class="block text-xs font-semibold text-slate-600 mb-1">Nama Lengkap &amp; Gelar <span class="text-red-500">*</span></label>
+          <input type="text" id="user-input-nama" required placeholder="Contoh: Budi Santoso, S.Pd."
+            class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600">
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label for="user-input-nip" class="block text-xs font-semibold text-slate-600 mb-1">NIP (Opsional)</label>
+            <input type="text" id="user-input-nip" placeholder="18 digit angka atau -"
+              class="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600">
+          </div>
+          <div>
+            <label for="user-select-role" class="block text-xs font-semibold text-slate-600 mb-1">Role Akses <span class="text-red-500">*</span></label>
+            <select id="user-select-role" required
+              class="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-600">
+              <option value="wali_kelas">Wali Kelas</option>
+              <option value="kepala_sekolah">Kepala Sekolah</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label for="user-input-username" class="block text-xs font-semibold text-slate-600 mb-1">Username Login <span class="text-red-500">*</span></label>
+          <input type="text" id="user-input-username" required placeholder="Contoh: budi_santoso"
+            class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600">
+          <p class="text-[10px] text-slate-400 mt-0.5">Huruf kecil, angka, dan garis bawah tanpa spasi.</p>
+        </div>
+
+        <div>
+          <label for="user-input-password" class="block text-xs font-semibold text-slate-600 mb-1">
+            <span id="label-user-password">Password</span> <span id="pwd-required-star" class="text-red-500">*</span>
+          </label>
+          <input type="password" id="user-input-password" placeholder="Minimal 6 karakter"
+            class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600">
+          <p id="user-password-hint" class="text-[10px] text-slate-400 mt-0.5">Password disimpan dengan PBKDF2 hash dan tidak pernah diekspos.</p>
+        </div>
+
+        <div class="pt-2 border-t border-slate-100">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" id="user-check-active" class="rounded text-blue-600 focus:ring-blue-500" checked>
+            <span class="text-xs text-slate-700 font-medium">Status Akun Aktif (Dapat Login)</span>
+          </label>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-3">
+          <button type="button" onclick="closeModalUser()"
+            class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
+            Batal
+          </button>
+          <button type="submit" id="btn-save-user"
+            class="px-5 py-2 text-xs font-semibold text-white bg-blue-700 hover:bg-blue-800 rounded-xl transition-all shadow-xs flex items-center gap-2">
+            <span id="user-spinner" class="spinner w-3.5 h-3.5 border-2 border-white rounded-full hidden"></span>
+            <span id="user-save-text">Simpan Pengguna</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal Tambah/Edit Data Siswa (Phase 5 - Wali Kelas) -->
+  <div id="modal-siswa-form" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+    <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 text-left">
+      <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
+        <h3 id="modal-siswa-title" class="text-base font-bold text-slate-900">Tambah Siswa Baru</h3>
+        <button type="button" onclick="closeModalSiswa()" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <form id="form-siswa" onsubmit="handleSiswaSubmit(event)" class="space-y-3">
+        <input type="hidden" id="siswa-input-id" value="">
+        <input type="hidden" id="siswa-input-wk-id" value="">
+
+        <div class="grid grid-cols-3 gap-3">
+          <div class="col-span-1">
+            <label for="siswa-input-no-absen" class="block text-xs font-semibold text-slate-600 mb-1">No. Absen <span class="text-red-500">*</span></label>
+            <input type="number" id="siswa-input-no-absen" required min="1" max="99" placeholder="1"
+              class="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600">
+          </div>
+          <div class="col-span-2">
+            <label for="siswa-input-nama" class="block text-xs font-semibold text-slate-600 mb-1">Nama Lengkap Siswa <span class="text-red-500">*</span></label>
+            <input type="text" id="siswa-input-nama" required placeholder="Contoh: Muhammad Rizky"
+              class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-3">
+          <div>
+            <label for="siswa-select-jk" class="block text-xs font-semibold text-slate-600 mb-1">Jenis Kelamin <span class="text-red-500">*</span></label>
+            <select id="siswa-select-jk" required
+              class="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-600">
+              <option value="L">L (Laki-laki)</option>
+              <option value="P">P (Perempuan)</option>
+            </select>
+          </div>
+          <div>
+            <label for="siswa-input-nisn" class="block text-xs font-semibold text-slate-600 mb-1">NISN (10 Digit)</label>
+            <input type="text" id="siswa-input-nisn" placeholder="0012345678"
+              class="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600">
+          </div>
+          <div>
+            <label for="siswa-input-nis" class="block text-xs font-semibold text-slate-600 mb-1">NIS Lokal</label>
+            <input type="text" id="siswa-input-nis" placeholder="1024"
+              class="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label for="siswa-input-tempat-lahir" class="block text-xs font-semibold text-slate-600 mb-1">Tempat Lahir</label>
+            <input type="text" id="siswa-input-tempat-lahir" placeholder="Kota / Kabupaten"
+              class="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600">
+          </div>
+          <div>
+            <label for="siswa-input-tanggal-lahir" class="block text-xs font-semibold text-slate-600 mb-1">Tanggal Lahir</label>
+            <input type="date" id="siswa-input-tanggal-lahir"
+              class="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label for="siswa-input-wali-murid" class="block text-xs font-semibold text-slate-600 mb-1">Nama Orang Tua / Wali</label>
+            <input type="text" id="siswa-input-wali-murid" placeholder="Nama ayah / ibu / wali"
+              class="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600">
+          </div>
+          <div>
+            <label for="siswa-input-telepon" class="block text-xs font-semibold text-slate-600 mb-1">Nomor Telepon / WA</label>
+            <input type="tel" id="siswa-input-telepon" placeholder="08xxxxxxxxxx"
+              class="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600">
+          </div>
+        </div>
+
+        <div class="pt-2 border-t border-slate-100">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" id="siswa-check-active" class="rounded text-blue-600 focus:ring-blue-500" checked>
+            <span class="text-xs text-slate-700 font-medium">Siswa Aktif pada Rombel Ini</span>
+          </label>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-3">
+          <button type="button" onclick="closeModalSiswa()"
+            class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
+            Batal
+          </button>
+          <button type="submit" id="btn-save-siswa"
+            class="px-5 py-2 text-xs font-semibold text-white bg-blue-700 hover:bg-blue-800 rounded-xl transition-all shadow-xs flex items-center gap-2">
+            <span id="siswa-spinner" class="spinner w-3.5 h-3.5 border-2 border-white rounded-full hidden"></span>
+            <span id="siswa-save-text">Simpan Data Siswa</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal Detail Profil Siswa -->
+  <div id="modal-siswa-detail" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 text-left">
+      <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
+        <h3 class="text-base font-bold text-slate-900">Detail Informasi Siswa</h3>
+        <button type="button" onclick="closeModalDetailSiswa()" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="space-y-3 text-xs" id="detail-siswa-content">
+        <!-- Konten detail diinjeksi via JS -->
+      </div>
+
+      <div class="flex justify-end pt-5 mt-4 border-t border-slate-100">
+        <button type="button" onclick="closeModalDetailSiswa()"
+          class="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors">
+          Tutup
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Tambah/Edit Mata Pelajaran (Phase 5 - Wali Kelas) -->
+  <div id="modal-mapel-form" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 text-left">
+      <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
+        <h3 id="modal-mapel-title" class="text-base font-bold text-slate-900">Tambah Mata Pelajaran Baru</h3>
+        <button type="button" onclick="closeModalMapel()" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <form id="form-mapel" onsubmit="handleMapelSubmit(event)" class="space-y-3.5">
+        <input type="hidden" id="mapel-input-id" value="">
+        <input type="hidden" id="mapel-input-wk-id" value="">
+
+        <div>
+          <label for="mapel-input-kode" class="block text-xs font-semibold text-slate-600 mb-1">Kode Mata Pelajaran <span class="text-red-500">*</span></label>
+          <input type="text" id="mapel-input-kode" required placeholder="Contoh: MTK, BIN, IPA, PAI"
+            class="w-full px-3.5 py-2 text-xs font-mono uppercase rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600">
+          <p class="text-[10px] text-slate-400 mt-0.5">Kode unik singkat dalam penugasan kelas ini.</p>
+        </div>
+
+        <div>
+          <label for="mapel-input-nama" class="block text-xs font-semibold text-slate-600 mb-1">Nama Mata Pelajaran <span class="text-red-500">*</span></label>
+          <input type="text" id="mapel-input-nama" required placeholder="Contoh: Matematika"
+            class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600">
+        </div>
+
+        <div class="pt-2 border-t border-slate-100">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" id="mapel-check-active" class="rounded text-blue-600 focus:ring-blue-500" checked>
+            <span class="text-xs text-slate-700 font-medium">Mata Pelajaran Aktif Diajarkan</span>
+          </label>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-3">
+          <button type="button" onclick="closeModalMapel()"
+            class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
+            Batal
+          </button>
+          <button type="submit" id="btn-save-mapel"
+            class="px-5 py-2 text-xs font-semibold text-white bg-blue-700 hover:bg-blue-800 rounded-xl transition-all shadow-xs flex items-center gap-2">
+            <span id="mapel-spinner" class="spinner w-3.5 h-3.5 border-2 border-white rounded-full hidden"></span>
+            <span id="mapel-save-text">Simpan Mata Pelajaran</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Modal Konfirmasi Umum (Hapus / Kunci) -->
   <div id="modal-confirm" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
     <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 text-center">
@@ -596,7 +1046,12 @@
       currentRoute: 'dashboard',
       tahunAjaranList: [],
       penugasanList: [],
-      guruOptions: []
+      guruOptions: [],
+      usersList: [],
+      siswaList: [],
+      mapelList: [],
+      currentPenugasanInfo: null,
+      siswaMapelKelasOptions: []
     };
 
     // Konfigurasi Navigasi dan Metadata Modul Sesuai Role (PRD & Arsitektur)
@@ -626,14 +1081,14 @@
         {
           id: 'pengguna',
           title: 'Manajemen Pengguna',
-          phase: 'Phase 5',
+          phase: 'Phase 5 (Aktif)',
           desc: 'Pengelolaan akun guru, status aktif, dan reset kredensial.',
           icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>'
         },
         {
           id: 'siswa_mapel',
           title: 'Siswa & Mapel',
-          phase: 'Phase 5',
+          phase: 'Phase 5 (Aktif)',
           desc: 'Monitoring dan pengelolaan data siswa serta mata pelajaran per kelas.',
           icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>'
         },
@@ -670,14 +1125,14 @@
         {
           id: 'siswa',
           title: 'Data Siswa',
-          phase: 'Phase 5',
+          phase: 'Phase 5 (Aktif)',
           desc: 'Daftar nama, NISN, NIS, dan profil siswa pada kelas sendiri.',
           icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>'
         },
         {
           id: 'mata_pelajaran',
           title: 'Mata Pelajaran',
-          phase: 'Phase 5',
+          phase: 'Phase 5 (Aktif)',
           desc: 'Pengelolaan daftar mata pelajaran kurikulum untuk kelas diampu.',
           icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>'
         },
@@ -934,6 +1389,10 @@
         document.getElementById('view-dashboard').classList.add('hidden');
         document.getElementById('view-tahun-ajaran').classList.add('hidden');
         document.getElementById('view-penugasan').classList.add('hidden');
+        document.getElementById('view-pengguna').classList.add('hidden');
+        document.getElementById('view-siswa').classList.add('hidden');
+        document.getElementById('view-mata-pelajaran').classList.add('hidden');
+        document.getElementById('view-siswa-mapel').classList.add('hidden');
         document.getElementById('view-placeholder').classList.add('hidden');
 
         // Buka tampilan yang relevan
@@ -946,6 +1405,18 @@
         } else if (routeId === 'penugasan') {
           document.getElementById('view-penugasan').classList.remove('hidden');
           loadPenugasanList();
+        } else if (routeId === 'pengguna') {
+          document.getElementById('view-pengguna').classList.remove('hidden');
+          loadUsersList();
+        } else if (routeId === 'siswa') {
+          document.getElementById('view-siswa').classList.remove('hidden');
+          loadSiswaList();
+        } else if (routeId === 'mata_pelajaran') {
+          document.getElementById('view-mata-pelajaran').classList.remove('hidden');
+          loadMataPelajaranList();
+        } else if (routeId === 'siswa_mapel') {
+          document.getElementById('view-siswa-mapel').classList.remove('hidden');
+          initSiswaMapelOverview();
         } else {
           document.getElementById('view-placeholder').classList.remove('hidden');
           document.getElementById('placeholder-title').textContent = targetRoute.title;
@@ -1714,6 +2185,787 @@
           }
         }
       );
+    }
+
+    // ========================================================================
+    // LOGIKA CLIENT-SIDE PHASE 5: PENGELOLAAN PENGGUNA (KEPALA SEKOLAH)
+    // ========================================================================
+    let userSearchDebounce = null;
+    function handleUserSearch(val) {
+      clearTimeout(userSearchDebounce);
+      userSearchDebounce = setTimeout(() => {
+        loadUsersList(val);
+      }, 350);
+    }
+
+    async function loadUsersList(searchQuery = '') {
+      const tbody = document.getElementById('users-table-body');
+      tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-400">Memuat daftar pengguna...</td></tr>';
+
+      try {
+        const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+        const res = await callBackend('apiGetUsersList', token, searchQuery);
+        if (res && res.success && Array.isArray(res.data)) {
+          APP_STATE.usersList = res.data;
+          renderUsersTable(res.data);
+        } else {
+          tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-red-500">${(res && res.message) || 'Gagal memuat pengguna.'}</td></tr>`;
+        }
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-red-500">Kesalahan server saat memuat pengguna.</td></tr>';
+      }
+    }
+
+    function renderUsersTable(users) {
+      const tbody = document.getElementById('users-table-body');
+      if (!users || users.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="6" class="py-12 text-center text-slate-400">
+              <svg class="w-10 h-10 mx-auto mb-2 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+              Tidak ada pengguna yang sesuai.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      const currentUserId = APP_STATE.user ? APP_STATE.user.id : null;
+
+      tbody.innerHTML = users.map(u => `
+        <tr class="hover:bg-slate-50/70 transition-colors">
+          <td class="py-3 px-4">
+            <div class="font-bold text-slate-900">${u.nama}</div>
+            <div class="text-[10px] text-slate-400 font-mono">@${u.username}</div>
+          </td>
+          <td class="py-3 px-4 font-mono text-slate-600">${u.nip || '-'}</td>
+          <td class="py-3 px-4">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${u.role === 'kepala_sekolah' ? 'bg-purple-50 text-purple-700 border border-purple-200' : 'bg-blue-50 text-blue-700 border border-blue-200'}">
+              ${u.role === 'kepala_sekolah' ? 'Kepala Sekolah' : 'Wali Kelas'}
+            </span>
+          </td>
+          <td class="py-3 px-4 text-center">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${u.is_active ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500 border border-slate-200'}">
+              ${u.is_active ? 'Aktif' : 'Nonaktif'}
+            </span>
+          </td>
+          <td class="py-3 px-4 text-[11px] text-slate-400">
+            ${u.terakhir_login ? String(u.terakhir_login).substring(0, 16).replace('T', ' ') : 'Belum pernah'}
+          </td>
+          <td class="py-3 px-4 text-center">
+            <div class="inline-flex items-center gap-1.5">
+              <button type="button" onclick="openModalEditUser('${u.id}')"
+                class="p-1.5 text-blue-700 hover:bg-blue-50 rounded-lg transition-colors" title="Edit Pengguna">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+              </button>
+
+              ${u.id !== currentUserId ? `
+                <button type="button" onclick="confirmToggleUserStatus('${u.id}', ${u.is_active})"
+                  class="p-1.5 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors" title="${u.is_active ? 'Nonaktifkan' : 'Aktifkan'}">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${u.is_active ? 'M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636' : 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z'}"/></svg>
+                </button>
+
+                ${!u.hasPenugasan ? `
+                  <button type="button" onclick="confirmDeleteUser('${u.id}')"
+                    class="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Hapus Permanen">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                  </button>
+                ` : ''}
+              ` : ''}
+            </div>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function openModalTambahUser() {
+      document.getElementById('modal-user-title').textContent = 'Tambah Pengguna Baru';
+      document.getElementById('user-input-id').value = '';
+      document.getElementById('user-input-nama').value = '';
+      document.getElementById('user-input-nip').value = '';
+      document.getElementById('user-input-username').value = '';
+      document.getElementById('user-select-role').value = 'wali_kelas';
+      document.getElementById('user-input-password').value = '';
+      document.getElementById('user-input-password').required = true;
+      document.getElementById('pwd-required-star').classList.remove('hidden');
+      document.getElementById('user-password-hint').textContent = 'Password disimpan dengan PBKDF2 hash dan tidak pernah diekspos.';
+      document.getElementById('user-check-active').checked = true;
+      document.getElementById('modal-user-form').classList.remove('hidden');
+    }
+
+    function openModalEditUser(id) {
+      const u = APP_STATE.usersList.find(x => x.id === id);
+      if (!u) return;
+
+      document.getElementById('modal-user-title').textContent = 'Edit Data Pengguna';
+      document.getElementById('user-input-id').value = u.id;
+      document.getElementById('user-input-nama').value = u.nama;
+      document.getElementById('user-input-nip').value = u.nip !== '-' ? u.nip : '';
+      document.getElementById('user-input-username').value = u.username;
+      document.getElementById('user-select-role').value = u.role;
+      document.getElementById('user-input-password').value = '';
+      document.getElementById('user-input-password').required = false;
+      document.getElementById('pwd-required-star').classList.add('hidden');
+      document.getElementById('user-password-hint').textContent = 'Kosongkan jika tidak ingin mengubah password.';
+      document.getElementById('user-check-active').checked = !!u.is_active;
+      document.getElementById('modal-user-form').classList.remove('hidden');
+    }
+
+    function closeModalUser() {
+      document.getElementById('modal-user-form').classList.add('hidden');
+    }
+
+    async function handleUserSubmit(e) {
+      e.preventDefault();
+      const id = document.getElementById('user-input-id').value;
+      const nama = document.getElementById('user-input-nama').value.trim();
+      const nip = document.getElementById('user-input-nip').value.trim();
+      const username = document.getElementById('user-input-username').value.trim().toLowerCase();
+      const role = document.getElementById('user-select-role').value;
+      const password = document.getElementById('user-input-password').value;
+      const is_active = document.getElementById('user-check-active').checked;
+
+      const btn = document.getElementById('btn-save-user');
+      const spinner = document.getElementById('user-spinner');
+      const txt = document.getElementById('user-save-text');
+
+      btn.disabled = true;
+      spinner.classList.remove('hidden');
+      txt.textContent = 'Menyimpan...';
+
+      try {
+        const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+        const payload = { id, nama, nip, username, role, password, is_active };
+        const res = await callBackend('apiSaveUser', token, payload);
+        if (res && res.success) {
+          showToast(res.message || 'Pengguna berhasil disimpan.', 'success');
+          closeModalUser();
+          loadUsersList();
+        } else {
+          showToast((res && res.message) || 'Gagal menyimpan pengguna.', 'error');
+        }
+      } catch (err) {
+        showToast('Kesalahan server saat memproses pengguna.', 'error');
+      } finally {
+        btn.disabled = false;
+        spinner.classList.add('hidden');
+        txt.textContent = 'Simpan Pengguna';
+      }
+    }
+
+    function confirmToggleUserStatus(id, currentActive) {
+      const actionText = currentActive ? 'Menonaktifkan' : 'Mengaktifkan';
+      const desc = currentActive
+        ? 'Pengguna yang dinonaktifkan tidak akan dapat masuk ke dalam sistem.'
+        : 'Mengaktifkan kembali akun pengguna agar dapat masuk ke dalam sistem.';
+
+      openConfirmModal(
+        `${actionText} Akun Pengguna`,
+        desc,
+        currentActive ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-600 hover:bg-blue-700',
+        async () => {
+          const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+          const res = await callBackend('apiToggleUserStatus', token, id, !currentActive);
+          if (res && res.success) {
+            showToast(res.message, 'success');
+            loadUsersList();
+          } else {
+            showToast((res && res.message) || 'Gagal mengubah status pengguna.', 'error');
+          }
+        }
+      );
+    }
+
+    function confirmDeleteUser(id) {
+      openConfirmModal(
+        'Hapus Pengguna Permanen',
+        'Apakah Anda yakin ingin menghapus pengguna ini? Operasi hanya dapat dilakukan jika pengguna belum memiliki riwayat penugasan kelas.',
+        'bg-red-600 hover:bg-red-700',
+        async () => {
+          const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+          const res = await callBackend('apiDeleteUser', token, id);
+          if (res && res.success) {
+            showToast('Pengguna berhasil dihapus.', 'success');
+            loadUsersList();
+          } else {
+            showToast((res && res.message) || 'Gagal menghapus pengguna.', 'error');
+          }
+        }
+      );
+    }
+
+    // ========================================================================
+    // LOGIKA CLIENT-SIDE PHASE 5: PENGELOLAAN SISWA (WALI KELAS & KEPALA SEKOLAH)
+    // ========================================================================
+    async function loadSiswaList(filterWaliKelasId = '') {
+      const tbody = document.getElementById('siswa-table-body');
+      tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-400">Memuat data siswa...</td></tr>';
+
+      try {
+        const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+        const res = await callBackend('apiGetSiswaList', token, filterWaliKelasId);
+        if (res && res.success && res.data) {
+          APP_STATE.siswaList = res.data.siswa || [];
+          APP_STATE.currentPenugasanInfo = res.data.penugasan || null;
+
+          if (res.data.penugasan) {
+            document.getElementById('siswa-header-class-badge').textContent = `Kelas ${res.data.penugasan.kelas}`;
+            document.getElementById('siswa-header-period-badge').textContent = `${res.data.penugasan.tahunAjaran} (${res.data.penugasan.semester})`;
+            document.getElementById('siswa-view-heading').textContent = `Data Siswa Kelas ${res.data.penugasan.kelas}`;
+          }
+
+          const isLocked = !!res.data.isReadOnly;
+          const lockedBanner = document.getElementById('siswa-locked-banner');
+          const btnTambah = document.getElementById('btn-tambah-siswa');
+
+          if (isLocked) {
+            lockedBanner.classList.remove('hidden');
+            if (btnTambah) btnTambah.classList.add('hidden');
+          } else {
+            lockedBanner.classList.add('hidden');
+            if (btnTambah) btnTambah.classList.remove('hidden');
+          }
+
+          renderSiswaTable(res.data.siswa, isLocked);
+        } else {
+          tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-red-500">${(res && res.message) || 'Gagal memuat data siswa.'}</td></tr>`;
+        }
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-red-500">Kesalahan server saat memuat siswa.</td></tr>';
+      }
+    }
+
+    function renderSiswaTable(siswa, isReadOnly) {
+      const tbody = document.getElementById('siswa-table-body');
+      if (!siswa || siswa.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="6" class="py-12 text-center text-slate-400">
+              <svg class="w-10 h-10 mx-auto mb-2 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+              Belum ada data siswa di kelas ini.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = siswa.map(s => `
+        <tr class="hover:bg-slate-50/70 transition-colors">
+          <td class="py-3 px-4 text-center font-bold text-slate-900">${s.no_absen}</td>
+          <td class="py-3 px-4">
+            <div class="font-bold text-slate-900">${s.nama}</div>
+            <div class="text-[10px] text-slate-400">Wali: ${s.wali_murid || '-'}</div>
+          </td>
+          <td class="py-3 px-4 font-mono text-slate-600 text-xs">
+            <div>NISN: ${s.nisn}</div>
+            <div class="text-[10px] text-slate-400">NIS: ${s.nis}</div>
+          </td>
+          <td class="py-3 px-4 text-center">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${s.jenis_kelamin === 'L' ? 'bg-sky-50 text-sky-700 border border-sky-200' : 'bg-pink-50 text-pink-700 border border-pink-200'}">
+              ${s.jenis_kelamin === 'L' ? 'L' : 'P'}
+            </span>
+          </td>
+          <td class="py-3 px-4 text-center">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${s.is_active ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500 border border-slate-200'}">
+              ${s.is_active ? 'Aktif' : 'Nonaktif'}
+            </span>
+          </td>
+          <td class="py-3 px-4 text-center">
+            <div class="inline-flex items-center gap-1">
+              <button type="button" onclick="openModalDetailSiswa('${s.id}')"
+                class="p-1.5 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors" title="Detail Siswa">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+              </button>
+
+              ${!isReadOnly ? `
+                <button type="button" onclick="openModalEditSiswa('${s.id}')"
+                  class="p-1.5 text-blue-700 hover:bg-blue-50 rounded-lg transition-colors" title="Edit Siswa">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                </button>
+
+                <button type="button" onclick="confirmToggleSiswaStatus('${s.id}', ${s.is_active})"
+                  class="p-1.5 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors" title="${s.is_active ? 'Nonaktifkan' : 'Aktifkan'}">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${s.is_active ? 'M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636' : 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z'}"/></svg>
+                </button>
+
+                ${!s.hasGrades ? `
+                  <button type="button" onclick="confirmDeleteSiswa('${s.id}')"
+                    class="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Hapus Permanen">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                  </button>
+                ` : ''}
+              ` : ''}
+            </div>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function openModalTambahSiswa() {
+      document.getElementById('modal-siswa-title').textContent = 'Tambah Siswa Baru';
+      document.getElementById('siswa-input-id').value = '';
+      document.getElementById('siswa-input-wk-id').value = APP_STATE.currentPenugasanInfo ? APP_STATE.currentPenugasanInfo.id : '';
+
+      let nextAbsen = 1;
+      if (APP_STATE.siswaList && APP_STATE.siswaList.length > 0) {
+        const maxAbsen = Math.max(...APP_STATE.siswaList.map(s => Number(s.no_absen) || 0));
+        nextAbsen = maxAbsen + 1;
+      }
+
+      document.getElementById('siswa-input-no-absen').value = nextAbsen;
+      document.getElementById('siswa-input-nama').value = '';
+      document.getElementById('siswa-select-jk').value = 'L';
+      document.getElementById('siswa-input-nisn').value = '';
+      document.getElementById('siswa-input-nis').value = '';
+      document.getElementById('siswa-input-tempat-lahir').value = '';
+      document.getElementById('siswa-input-tanggal-lahir').value = '';
+      document.getElementById('siswa-input-wali-murid').value = '';
+      document.getElementById('siswa-input-telepon').value = '';
+      document.getElementById('siswa-check-active').checked = true;
+      document.getElementById('modal-siswa-form').classList.remove('hidden');
+    }
+
+    function openModalEditSiswa(id) {
+      const s = APP_STATE.siswaList.find(x => x.id === id);
+      if (!s) return;
+
+      document.getElementById('modal-siswa-title').textContent = 'Edit Data Siswa';
+      document.getElementById('siswa-input-id').value = s.id;
+      document.getElementById('siswa-input-wk-id').value = s.wali_kelas_id;
+      document.getElementById('siswa-input-no-absen').value = s.no_absen;
+      document.getElementById('siswa-input-nama').value = s.nama;
+      document.getElementById('siswa-select-jk').value = s.jenis_kelamin;
+      document.getElementById('siswa-input-nisn').value = s.nisn !== '-' ? s.nisn : '';
+      document.getElementById('siswa-input-nis').value = s.nis !== '-' ? s.nis : '';
+      document.getElementById('siswa-input-tempat-lahir').value = s.tempat_lahir || '';
+      document.getElementById('siswa-input-tanggal-lahir').value = s.tanggal_lahir || '';
+      document.getElementById('siswa-input-wali-murid').value = s.wali_murid || '';
+      document.getElementById('siswa-input-telepon').value = s.nomor_telepon || '';
+      document.getElementById('siswa-check-active').checked = !!s.is_active;
+      document.getElementById('modal-siswa-form').classList.remove('hidden');
+    }
+
+    function openModalDetailSiswa(id) {
+      const s = APP_STATE.siswaList.find(x => x.id === id);
+      if (!s) return;
+
+      const content = document.getElementById('detail-siswa-content');
+      content.innerHTML = `
+        <div class="flex items-center gap-3 p-3 bg-blue-50/70 border border-blue-100 rounded-xl mb-3">
+          <div class="w-12 h-12 rounded-xl bg-blue-700 text-white font-bold text-base flex items-center justify-center flex-shrink-0">
+            ${s.no_absen}
+          </div>
+          <div>
+            <div class="text-sm font-bold text-slate-900">${s.nama}</div>
+            <div class="text-slate-500 font-mono text-[11px]">NISN: ${s.nisn} &bull; NIS: ${s.nis}</div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2 text-slate-700">
+          <div class="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
+            <div class="text-[10px] text-slate-400 uppercase font-semibold">Jenis Kelamin</div>
+            <div class="font-medium mt-0.5">${s.jenis_kelamin === 'L' ? 'Laki-laki' : 'Perempuan'}</div>
+          </div>
+          <div class="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
+            <div class="text-[10px] text-slate-400 uppercase font-semibold">Status Siswa</div>
+            <div class="font-medium mt-0.5 ${s.is_active ? 'text-emerald-700' : 'text-slate-500'}">${s.is_active ? 'Aktif' : 'Nonaktif'}</div>
+          </div>
+          <div class="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
+            <div class="text-[10px] text-slate-400 uppercase font-semibold">Tempat, Tanggal Lahir</div>
+            <div class="font-medium mt-0.5">${s.tempat_lahir || '-'}, ${s.tanggal_lahir || '-'}</div>
+          </div>
+          <div class="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
+            <div class="text-[10px] text-slate-400 uppercase font-semibold">Nama Orang Tua / Wali</div>
+            <div class="font-medium mt-0.5">${s.wali_murid || '-'}</div>
+          </div>
+          <div class="col-span-2 p-2.5 rounded-lg bg-slate-50 border border-slate-100">
+            <div class="text-[10px] text-slate-400 uppercase font-semibold">Nomor Telepon / Kontak</div>
+            <div class="font-medium mt-0.5 font-mono">${s.nomor_telepon || '-'}</div>
+          </div>
+        </div>
+      `;
+
+      document.getElementById('modal-siswa-detail').classList.remove('hidden');
+    }
+
+    function closeModalSiswa() {
+      document.getElementById('modal-siswa-form').classList.add('hidden');
+    }
+
+    function closeModalDetailSiswa() {
+      document.getElementById('modal-siswa-detail').classList.add('hidden');
+    }
+
+    async function handleSiswaSubmit(e) {
+      e.preventDefault();
+      const id = document.getElementById('siswa-input-id').value;
+      const wali_kelas_id = document.getElementById('siswa-input-wk-id').value;
+      const no_absen = document.getElementById('siswa-input-no-absen').value;
+      const nama = document.getElementById('siswa-input-nama').value.trim();
+      const jenis_kelamin = document.getElementById('siswa-select-jk').value;
+      const nisn = document.getElementById('siswa-input-nisn').value.trim();
+      const nis = document.getElementById('siswa-input-nis').value.trim();
+      const tempat_lahir = document.getElementById('siswa-input-tempat-lahir').value.trim();
+      const tanggal_lahir = document.getElementById('siswa-input-tanggal-lahir').value;
+      const wali_murid = document.getElementById('siswa-input-wali-murid').value.trim();
+      const nomor_telepon = document.getElementById('siswa-input-telepon').value.trim();
+      const is_active = document.getElementById('siswa-check-active').checked;
+
+      const btn = document.getElementById('btn-save-siswa');
+      const spinner = document.getElementById('siswa-spinner');
+      const txt = document.getElementById('siswa-save-text');
+
+      btn.disabled = true;
+      spinner.classList.remove('hidden');
+      txt.textContent = 'Menyimpan...';
+
+      try {
+        const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+        const payload = { id, wali_kelas_id, no_absen, nama, jenis_kelamin, nisn, nis, tempat_lahir, tanggal_lahir, wali_murid, nomor_telepon, is_active };
+        const res = await callBackend('apiSaveSiswa', token, payload);
+        if (res && res.success) {
+          showToast(res.message || 'Data siswa berhasil disimpan.', 'success');
+          closeModalSiswa();
+          loadSiswaList(wali_kelas_id);
+          loadDashboardData();
+        } else {
+          showToast((res && res.message) || 'Gagal menyimpan siswa.', 'error');
+        }
+      } catch (err) {
+        showToast('Kesalahan server saat memproses siswa.', 'error');
+      } finally {
+        btn.disabled = false;
+        spinner.classList.add('hidden');
+        txt.textContent = 'Simpan Data Siswa';
+      }
+    }
+
+    function confirmToggleSiswaStatus(id, currentActive) {
+      const actionText = currentActive ? 'Menonaktifkan' : 'Mengaktifkan';
+      const desc = currentActive
+        ? 'Siswa yang dinonaktifkan tidak akan disertakan dalam pengisian nilai aktif.'
+        : 'Mengaktifkan kembali siswa di kelas ini.';
+
+      openConfirmModal(
+        `${actionText} Status Siswa`,
+        desc,
+        currentActive ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-600 hover:bg-blue-700',
+        async () => {
+          const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+          const res = await callBackend('apiToggleSiswaStatus', token, id, !currentActive);
+          if (res && res.success) {
+            showToast(res.message, 'success');
+            loadSiswaList(APP_STATE.currentPenugasanInfo ? APP_STATE.currentPenugasanInfo.id : '');
+          } else {
+            showToast((res && res.message) || 'Gagal mengubah status siswa.', 'error');
+          }
+        }
+      );
+    }
+
+    function confirmDeleteSiswa(id) {
+      openConfirmModal(
+        'Hapus Siswa Permanen',
+        'Apakah Anda yakin ingin menghapus siswa ini? Tindakan ini hanya diperbolehkan jika siswa belum memiliki riwayat nilai atau kehadiran.',
+        'bg-red-600 hover:bg-red-700',
+        async () => {
+          const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+          const res = await callBackend('apiDeleteSiswa', token, id);
+          if (res && res.success) {
+            showToast('Data siswa berhasil dihapus.', 'success');
+            loadSiswaList(APP_STATE.currentPenugasanInfo ? APP_STATE.currentPenugasanInfo.id : '');
+            loadDashboardData();
+          } else {
+            showToast((res && res.message) || 'Gagal menghapus siswa.', 'error');
+          }
+        }
+      );
+    }
+
+    // ========================================================================
+    // LOGIKA CLIENT-SIDE PHASE 5: MATA PELAJARAN (WALI KELAS & KEPALA SEKOLAH)
+    // ========================================================================
+    async function loadMataPelajaranList(filterWaliKelasId = '') {
+      const tbody = document.getElementById('mapel-table-body');
+      tbody.innerHTML = '<tr><td colspan="5" class="py-8 text-center text-slate-400">Memuat mata pelajaran...</td></tr>';
+
+      try {
+        const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+        const res = await callBackend('apiGetMataPelajaranList', token, filterWaliKelasId);
+        if (res && res.success && res.data) {
+          APP_STATE.mapelList = res.data.mataPelajaran || [];
+          if (res.data.penugasan) {
+            document.getElementById('mapel-header-class-badge').textContent = `Kelas ${res.data.penugasan.kelas}`;
+            document.getElementById('mapel-header-period-badge').textContent = `${res.data.penugasan.tahunAjaran} (${res.data.penugasan.semester})`;
+            document.getElementById('mapel-view-heading').textContent = `Mata Pelajaran Kelas ${res.data.penugasan.kelas}`;
+          }
+
+          const isLocked = !!res.data.isReadOnly;
+          const lockedBanner = document.getElementById('mapel-locked-banner');
+          const btnTambah = document.getElementById('btn-tambah-mapel');
+
+          if (isLocked) {
+            lockedBanner.classList.remove('hidden');
+            if (btnTambah) btnTambah.classList.add('hidden');
+          } else {
+            lockedBanner.classList.add('hidden');
+            if (btnTambah) btnTambah.classList.remove('hidden');
+          }
+
+          renderMataPelajaranTable(res.data.mataPelajaran, isLocked);
+        } else {
+          tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-red-500">${(res && res.message) || 'Gagal memuat mata pelajaran.'}</td></tr>`;
+        }
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="5" class="py-8 text-center text-red-500">Kesalahan server saat memuat mata pelajaran.</td></tr>';
+      }
+    }
+
+    function renderMataPelajaranTable(mapel, isReadOnly) {
+      const tbody = document.getElementById('mapel-table-body');
+      if (!mapel || mapel.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="5" class="py-12 text-center text-slate-400">
+              <svg class="w-10 h-10 mx-auto mb-2 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+              Belum ada mata pelajaran terdaftar pada kelas ini.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = mapel.map(m => `
+        <tr class="hover:bg-slate-50/70 transition-colors">
+          <td class="py-3 px-4 font-mono font-bold text-slate-900">${m.kode_mata_pelajaran}</td>
+          <td class="py-3 px-4 font-medium text-slate-800">${m.mata_pelajaran}</td>
+          <td class="py-3 px-4 text-center">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${m.hasGrades ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-slate-100 text-slate-400 border border-slate-200'}">
+              ${m.hasGrades ? 'Ada Nilai' : 'Belum Ada Nilai'}
+            </span>
+          </td>
+          <td class="py-3 px-4 text-center">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${m.is_active ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500 border border-slate-200'}">
+              ${m.is_active ? 'Aktif' : 'Nonaktif'}
+            </span>
+          </td>
+          <td class="py-3 px-4 text-center">
+            <div class="inline-flex items-center gap-1.5">
+              ${!isReadOnly ? `
+                <button type="button" onclick="openModalEditMapel('${m.id}')"
+                  class="p-1.5 text-blue-700 hover:bg-blue-50 rounded-lg transition-colors" title="Edit Mata Pelajaran">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                </button>
+
+                <button type="button" onclick="confirmToggleMapelStatus('${m.id}', ${m.is_active})"
+                  class="p-1.5 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors" title="${m.is_active ? 'Nonaktifkan' : 'Aktifkan'}">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${m.is_active ? 'M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636' : 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z'}"/></svg>
+                </button>
+
+                ${!m.hasGrades ? `
+                  <button type="button" onclick="confirmDeleteMapel('${m.id}')"
+                    class="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Hapus Permanen">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                  </button>
+                ` : ''}
+              ` : `
+                <span class="text-[10px] text-slate-400">Terkunci</span>
+              `}
+            </div>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function openModalTambahMapel() {
+      document.getElementById('modal-mapel-title').textContent = 'Tambah Mata Pelajaran Baru';
+      document.getElementById('mapel-input-id').value = '';
+      document.getElementById('mapel-input-wk-id').value = APP_STATE.currentPenugasanInfo ? APP_STATE.currentPenugasanInfo.id : '';
+      document.getElementById('mapel-input-kode').value = '';
+      document.getElementById('mapel-input-nama').value = '';
+      document.getElementById('mapel-check-active').checked = true;
+      document.getElementById('modal-mapel-form').classList.remove('hidden');
+    }
+
+    function openModalEditMapel(id) {
+      const m = APP_STATE.mapelList.find(x => x.id === id);
+      if (!m) return;
+
+      document.getElementById('modal-mapel-title').textContent = 'Edit Mata Pelajaran';
+      document.getElementById('mapel-input-id').value = m.id;
+      document.getElementById('mapel-input-wk-id').value = m.wali_kelas_id;
+      document.getElementById('mapel-input-kode').value = m.kode_mata_pelajaran;
+      document.getElementById('mapel-input-nama').value = m.mata_pelajaran;
+      document.getElementById('mapel-check-active').checked = !!m.is_active;
+      document.getElementById('modal-mapel-form').classList.remove('hidden');
+    }
+
+    function closeModalMapel() {
+      document.getElementById('modal-mapel-form').classList.add('hidden');
+    }
+
+    async function handleMapelSubmit(e) {
+      e.preventDefault();
+      const id = document.getElementById('mapel-input-id').value;
+      const wali_kelas_id = document.getElementById('mapel-input-wk-id').value;
+      const kode_mata_pelajaran = document.getElementById('mapel-input-kode').value.trim().toUpperCase();
+      const mata_pelajaran = document.getElementById('mapel-input-nama').value.trim();
+      const is_active = document.getElementById('mapel-check-active').checked;
+
+      const btn = document.getElementById('btn-save-mapel');
+      const spinner = document.getElementById('mapel-spinner');
+      const txt = document.getElementById('mapel-save-text');
+
+      btn.disabled = true;
+      spinner.classList.remove('hidden');
+      txt.textContent = 'Menyimpan...';
+
+      try {
+        const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+        const payload = { id, wali_kelas_id, kode_mata_pelajaran, mata_pelajaran, is_active };
+        const res = await callBackend('apiSaveMataPelajaran', token, payload);
+        if (res && res.success) {
+          showToast(res.message || 'Mata pelajaran berhasil disimpan.', 'success');
+          closeModalMapel();
+          loadMataPelajaranList(wali_kelas_id);
+        } else {
+          showToast((res && res.message) || 'Gagal menyimpan mata pelajaran.', 'error');
+        }
+      } catch (err) {
+        showToast('Kesalahan server saat memproses mata pelajaran.', 'error');
+      } finally {
+        btn.disabled = false;
+        spinner.classList.add('hidden');
+        txt.textContent = 'Simpan Mata Pelajaran';
+      }
+    }
+
+    function confirmToggleMapelStatus(id, currentActive) {
+      const actionText = currentActive ? 'Menonaktifkan' : 'Mengaktifkan';
+      const desc = currentActive
+        ? 'Mata pelajaran yang dinonaktifkan tidak akan tampil pada pengisian nilai baru.'
+        : 'Mengaktifkan kembali mata pelajaran ini pada kelas.';
+
+      openConfirmModal(
+        `${actionText} Mata Pelajaran`,
+        desc,
+        currentActive ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-600 hover:bg-blue-700',
+        async () => {
+          const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+          const res = await callBackend('apiToggleMataPelajaranStatus', token, id, !currentActive);
+          if (res && res.success) {
+            showToast(res.message, 'success');
+            loadMataPelajaranList(APP_STATE.currentPenugasanInfo ? APP_STATE.currentPenugasanInfo.id : '');
+          } else {
+            showToast((res && res.message) || 'Gagal mengubah status mata pelajaran.', 'error');
+          }
+        }
+      );
+    }
+
+    function confirmDeleteMapel(id) {
+      openConfirmModal(
+        'Hapus Mata Pelajaran',
+        'Apakah Anda yakin ingin menghapus mata pelajaran ini? Tindakan ini hanya diperbolehkan jika belum ada nilai siswa yang terkait.',
+        'bg-red-600 hover:bg-red-700',
+        async () => {
+          const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+          const res = await callBackend('apiDeleteMataPelajaran', token, id);
+          if (res && res.success) {
+            showToast('Mata pelajaran berhasil dihapus.', 'success');
+            loadMataPelajaranList(APP_STATE.currentPenugasanInfo ? APP_STATE.currentPenugasanInfo.id : '');
+          } else {
+            showToast((res && res.message) || 'Gagal menghapus mata pelajaran.', 'error');
+          }
+        }
+      );
+    }
+
+    // ========================================================================
+    // LOGIKA CLIENT-SIDE PHASE 5: MONITORING SISWA & MAPEL (KEPALA SEKOLAH)
+    // ========================================================================
+    async function initSiswaMapelOverview() {
+      const select = document.getElementById('select-siswa-mapel-kelas');
+      select.innerHTML = '<option value="">Memuat opsi kelas...</option>';
+
+      try {
+        const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+        const resPenugasan = await callBackend('apiGetPenugasanList', token);
+        if (resPenugasan && resPenugasan.success && Array.isArray(resPenugasan.data)) {
+          const list = resPenugasan.data;
+          APP_STATE.siswaMapelKelasOptions = list;
+
+          if (list.length === 0) {
+            select.innerHTML = '<option value="">Belum ada penugasan kelas</option>';
+            return;
+          }
+
+          select.innerHTML = list.map(w => `
+            <option value="${w.id}">Kelas ${w.kelas} &bull; ${w.guruNama} (${w.tahunAjaran})</option>
+          `).join('');
+
+          loadSiswaMapelOverview(list[0].id);
+        }
+      } catch (e) {
+        select.innerHTML = '<option value="">Gagal memuat kelas</option>';
+      }
+    }
+
+    async function loadSiswaMapelOverview(wkId) {
+      if (!wkId) return;
+      const sTbody = document.getElementById('overview-siswa-table-body');
+      const mTbody = document.getElementById('overview-mapel-table-body');
+      const sBadge = document.getElementById('overview-siswa-count-badge');
+      const mBadge = document.getElementById('overview-mapel-count-badge');
+
+      sTbody.innerHTML = '<tr><td colspan="4" class="py-6 text-center text-slate-400">Memuat siswa...</td></tr>';
+      mTbody.innerHTML = '<tr><td colspan="3" class="py-6 text-center text-slate-400">Memuat mapel...</td></tr>';
+
+      try {
+        const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+
+        const resSiswa = await callBackend('apiGetSiswaList', token, wkId);
+        if (resSiswa && resSiswa.success && resSiswa.data) {
+          const siswa = resSiswa.data.siswa || [];
+          sBadge.textContent = `${siswa.length} Siswa`;
+          if (siswa.length === 0) {
+            sTbody.innerHTML = '<tr><td colspan="4" class="py-6 text-center text-slate-400">Belum ada siswa terdaftar.</td></tr>';
+          } else {
+            sTbody.innerHTML = siswa.map(s => `
+              <tr class="hover:bg-slate-50/70">
+                <td class="py-2.5 px-3 text-center font-bold text-slate-900">${s.no_absen}</td>
+                <td class="py-2.5 px-3 font-semibold text-slate-900">${s.nama}</td>
+                <td class="py-2.5 px-3 font-mono text-[11px] text-slate-500">${s.nisn}</td>
+                <td class="py-2.5 px-3 text-center">
+                  <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${s.jenis_kelamin === 'L' ? 'bg-sky-50 text-sky-700' : 'bg-pink-50 text-pink-700'}">${s.jenis_kelamin}</span>
+                </td>
+              </tr>
+            `).join('');
+          }
+        }
+
+        const resMapel = await callBackend('apiGetMataPelajaranList', token, wkId);
+        if (resMapel && resMapel.success && resMapel.data) {
+          const mapel = resMapel.data.mataPelajaran || [];
+          mBadge.textContent = `${mapel.length} Mapel`;
+          if (mapel.length === 0) {
+            mTbody.innerHTML = '<tr><td colspan="3" class="py-6 text-center text-slate-400">Belum ada mata pelajaran.</td></tr>';
+          } else {
+            mTbody.innerHTML = mapel.map(m => `
+              <tr class="hover:bg-slate-50/70">
+                <td class="py-2.5 px-3 font-mono font-bold text-slate-900">${m.kode_mata_pelajaran}</td>
+                <td class="py-2.5 px-3 font-medium text-slate-800">${m.mata_pelajaran}</td>
+                <td class="py-2.5 px-3 text-center">
+                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${m.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-400'}">${m.is_active ? 'Aktif' : 'Nonaktif'}</span>
+                </td>
+              </tr>
+            `).join('');
+          }
+        }
+      } catch (err) {
+        sTbody.innerHTML = '<tr><td colspan="4" class="py-6 text-center text-red-500">Gagal memuat overview siswa.</td></tr>';
+        mTbody.innerHTML = '<tr><td colspan="3" class="py-6 text-center text-red-500">Gagal memuat overview mapel.</td></tr>';
+      }
     }
 
     // Modal Konfirmasi Umum

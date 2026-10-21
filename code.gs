@@ -1571,7 +1571,1052 @@ function apiDeletePenugasan(sessionToken, penugasanId) {
 }
 
 // ============================================================================
-// 6. ENTRYPOINT APLIKASI WEB (doGet)
+// 6. ENDPOINT PHASE 5: PENGELOLAAN USER, SISWA, DAN MATA PELAJARAN
+// ============================================================================
+
+/**
+ * Mengambil daftar user untuk pengelolaan akun oleh Kepala Sekolah.
+ * Otorisasi: kepala_sekolah saja.
+ * Catatan Keamanan: password_hash dan password_salt TIDAK PERNAH dikembalikan ke frontend.
+ *
+ * @param {string} sessionToken
+ * @param {string} [searchQuery]
+ * @return {{ success: boolean, data: Object[], message: string }}
+ */
+function apiGetUsersList(sessionToken, searchQuery) {
+  try {
+    requireAuth(sessionToken, 'kepala_sekolah');
+
+    const uData = getSheetDataBatch('user');
+    let wkData = { rows: [] };
+    try {
+      wkData = getSheetDataBatch('wali_kelas');
+    } catch (e) {}
+
+    const cleanQuery = searchQuery ? String(searchQuery).trim().toLowerCase() : '';
+
+    let users = uData.rows.map(u => {
+      const hasPenugasan = wkData.rows.some(w => w.user_id === u.id);
+      return {
+        id: u.id,
+        nama: u.nama,
+        nip: u.nip || '-',
+        username: u.username,
+        role: u.role,
+        foto: u.foto || '',
+        terakhir_login: u.terakhir_login || '',
+        is_active: (u.is_active === true || String(u.is_active).toLowerCase() === 'true'),
+        hasPenugasan: hasPenugasan,
+        created_at: u.created_at,
+        updated_at: u.updated_at
+      };
+    });
+
+    if (cleanQuery) {
+      users = users.filter(u =>
+        u.nama.toLowerCase().includes(cleanQuery) ||
+        u.username.toLowerCase().includes(cleanQuery) ||
+        (u.nip && u.nip.toLowerCase().includes(cleanQuery))
+      );
+    }
+
+    // Urutkan: kepala sekolah di atas, lalu urutkan nama secara alfabetis
+    users.sort((a, b) => {
+      if (a.role === 'kepala_sekolah' && b.role !== 'kepala_sekolah') return -1;
+      if (b.role === 'kepala_sekolah' && a.role !== 'kepala_sekolah') return 1;
+      return a.nama.localeCompare(b.nama);
+    });
+
+    return buildResponse(true, users, 'Daftar pengguna berhasil dimuat.');
+  } catch (err) {
+    return buildResponse(false, null, err.message || 'Gagal memuat daftar pengguna.');
+  }
+}
+
+/**
+ * Menyimpan (Tambah/Edit) User oleh Kepala Sekolah.
+ * Otorisasi: kepala_sekolah saja.
+ * Password di-hash menggunakan PBKDF2-HMAC-SHA256 sebelum disimpan ke sheet.
+ *
+ * @param {string} sessionToken
+ * @param {Object} payload
+ * @return {{ success: boolean, data: Object|null, message: string }}
+ */
+function apiSaveUser(sessionToken, payload) {
+  let lock = null;
+  if (typeof LockService !== 'undefined') {
+    lock = LockService.getScriptLock();
+    lock.waitLock(30000);
+  }
+  try {
+    const adminUser = requireAuth(sessionToken, 'kepala_sekolah');
+
+    if (!payload || typeof payload !== 'object') {
+      return buildResponse(false, null, 'Data pengguna tidak valid.');
+    }
+
+    const editId = payload.id ? String(payload.id).trim() : null;
+    const cleanNama = String(payload.nama || '').trim();
+    const cleanNip = String(payload.nip || '').trim();
+    const cleanUsername = String(payload.username || '').trim().toLowerCase();
+    const cleanRole = String(payload.role || '').trim();
+    const cleanPassword = payload.password ? String(payload.password) : '';
+    const cleanFoto = payload.foto ? String(payload.foto).trim() : '';
+    const isActive = payload.is_active === undefined ? true : (payload.is_active === true || String(payload.is_active).toLowerCase() === 'true');
+
+    if (!cleanNama) {
+      return buildResponse(false, null, 'Nama lengkap wajib diisi.');
+    }
+    if (!cleanUsername) {
+      return buildResponse(false, null, 'Username wajib diisi.');
+    }
+    if (cleanUsername.length < 3) {
+      return buildResponse(false, null, 'Username minimal 3 karakter.');
+    }
+    if (!/^[a-z0-9_.]+$/.test(cleanUsername)) {
+      return buildResponse(false, null, 'Username hanya boleh berupa huruf kecil, angka, garis bawah (_), atau titik (.).');
+    }
+
+    if (!['kepala_sekolah', 'wali_kelas'].includes(cleanRole)) {
+      return buildResponse(false, null, 'Role harus salah satu dari: kepala_sekolah atau wali_kelas.');
+    }
+
+    const uData = getSheetDataBatch('user');
+
+    // Validasi keunikan username (case-insensitive)
+    const duplicateUser = uData.rows.find(u =>
+      String(u.username || '').toLowerCase() === cleanUsername &&
+      (!editId || u.id !== editId)
+    );
+    if (duplicateUser) {
+      return buildResponse(false, null, 'Username "' + cleanUsername + '" sudah digunakan oleh pengguna lain.');
+    }
+
+    // Validasi keunikan NIP jika diisi
+    if (cleanNip && cleanNip !== '-') {
+      const duplicateNip = uData.rows.find(u =>
+        String(u.nip || '').trim() === cleanNip &&
+        (!editId || u.id !== editId)
+      );
+      if (duplicateNip) {
+        return buildResponse(false, null, 'NIP "' + cleanNip + '" sudah terdaftar pada pengguna lain.');
+      }
+    }
+
+    const nowIso = new Date().toISOString();
+
+    if (editId) {
+      // Edit User yang Ada
+      const existingUser = uData.rows.find(u => u.id === editId);
+      if (!existingUser) {
+        return buildResponse(false, null, 'Data pengguna tidak ditemukan.');
+      }
+
+      // Proteksi Admin Lockout: Kepala sekolah tidak boleh menonaktifkan dirinya sendiri atau menurunkan rolenya
+      if (adminUser.id === editId) {
+        if (!isActive) {
+          return buildResponse(false, null, 'Anda tidak dapat menonaktifkan akun Anda sendiri.');
+        }
+        if (cleanRole !== 'kepala_sekolah') {
+          return buildResponse(false, null, 'Anda tidak dapat mengubah role akun Anda sendiri.');
+        }
+      }
+
+      const updateFields = {
+        nama: cleanNama,
+        nip: cleanNip,
+        username: cleanUsername,
+        role: cleanRole,
+        foto: cleanFoto,
+        is_active: isActive,
+        updated_at: nowIso
+      };
+
+      // Jika password baru diisi, perbarui password_hash & password_salt
+      if (cleanPassword) {
+        if (cleanPassword.length < 6) {
+          return buildResponse(false, null, 'Password baru minimal 6 karakter.');
+        }
+        const newSalt = generateSecureSalt();
+        const newHash = hashPasswordPBKDF2(cleanPassword, newSalt);
+        updateFields.password_salt = newSalt;
+        updateFields.password_hash = newHash;
+      }
+
+      updateSheetRow('user', existingUser._rowIndex, updateFields);
+      return buildResponse(true, { id: editId }, 'Data pengguna berhasil diperbarui.');
+    } else {
+      // Tambah User Baru
+      if (!cleanPassword) {
+        return buildResponse(false, null, 'Password wajib diisi untuk pengguna baru.');
+      }
+      if (cleanPassword.length < 6) {
+        return buildResponse(false, null, 'Password minimal 6 karakter.');
+      }
+
+      const newId = getStableUUID();
+      const salt = generateSecureSalt();
+      const hash = hashPasswordPBKDF2(cleanPassword, salt);
+
+      appendSheetRow('user', {
+        id: newId,
+        nama: cleanNama,
+        nip: cleanNip,
+        username: cleanUsername,
+        password_hash: hash,
+        password_salt: salt,
+        role: cleanRole,
+        foto: cleanFoto,
+        terakhir_login: '',
+        is_active: isActive,
+        created_at: nowIso,
+        updated_at: nowIso
+      });
+
+      return buildResponse(true, { id: newId }, 'Pengguna baru berhasil ditambahkan.');
+    }
+  } catch (err) {
+    return buildResponse(false, null, err.message || 'Gagal menyimpan pengguna.');
+  } finally {
+    if (lock) {
+      try { lock.releaseLock(); } catch (e) {}
+    }
+  }
+}
+
+/**
+ * Mengubah status aktif / nonaktif user.
+ * Otorisasi: kepala_sekolah saja.
+ *
+ * @param {string} sessionToken
+ * @param {string} userId
+ * @param {boolean} isActive
+ * @return {{ success: boolean, data: Object|null, message: string }}
+ */
+function apiToggleUserStatus(sessionToken, userId, isActive) {
+  try {
+    const adminUser = requireAuth(sessionToken, 'kepala_sekolah');
+
+    if (!userId) {
+      return buildResponse(false, null, 'ID pengguna diperlukan.');
+    }
+
+    if (adminUser.id === userId && !isActive) {
+      return buildResponse(false, null, 'Anda tidak dapat menonaktifkan akun Anda sendiri.');
+    }
+
+    const uData = getSheetDataBatch('user');
+    const existing = uData.rows.find(u => u.id === userId);
+    if (!existing) {
+      return buildResponse(false, null, 'Data pengguna tidak ditemukan.');
+    }
+
+    const targetActive = !!isActive;
+    const nowIso = new Date().toISOString();
+
+    updateSheetRow('user', existing._rowIndex, {
+      is_active: targetActive,
+      updated_at: nowIso
+    });
+
+    const msg = targetActive ? 'Akun pengguna berhasil diaktifkan.' : 'Akun pengguna berhasil dinonaktifkan.';
+    return buildResponse(true, { id: userId, is_active: targetActive }, msg);
+  } catch (err) {
+    return buildResponse(false, null, err.message || 'Gagal mengubah status pengguna.');
+  }
+}
+
+/**
+ * Menghapus user (Hanya jika belum pernah memiliki penugasan atau relasi).
+ * Otorisasi: kepala_sekolah saja.
+ *
+ * @param {string} sessionToken
+ * @param {string} userId
+ * @return {{ success: boolean, data: null, message: string }}
+ */
+function apiDeleteUser(sessionToken, userId) {
+  try {
+    const adminUser = requireAuth(sessionToken, 'kepala_sekolah');
+
+    if (!userId) {
+      return buildResponse(false, null, 'ID pengguna diperlukan.');
+    }
+
+    if (adminUser.id === userId) {
+      return buildResponse(false, null, 'Anda tidak dapat menghapus akun Anda sendiri.');
+    }
+
+    const uData = getSheetDataBatch('user');
+    const existing = uData.rows.find(u => u.id === userId);
+    if (!existing) {
+      return buildResponse(false, null, 'Data pengguna tidak ditemukan.');
+    }
+
+    // Proteksi relasi penugasan wali kelas
+    try {
+      const wkData = getSheetDataBatch('wali_kelas');
+      const hasWk = wkData.rows.some(w => w.user_id === userId);
+      if (hasWk) {
+        return buildResponse(false, null, 'Pengguna ini memiliki riwayat penugasan kelas dan tidak dapat dihapus permanen demi menjaga keutuhan riwayat data. Silakan nonaktifkan akun sebagai gantinya.');
+      }
+    } catch (e) {}
+
+    // Proteksi relasi pengaturan sekolah
+    try {
+      const pengData = getSheetDataBatch('pengaturan');
+      const hasPeng = pengData.rows.some(p => p.user_id === userId);
+      if (hasPeng) {
+        return buildResponse(false, null, 'Pengguna ini terhubung dengan profil kepala sekolah pada pengaturan dan tidak dapat dihapus.');
+      }
+    } catch (e) {}
+
+    deleteSheetRow('user', existing._rowIndex);
+    return buildResponse(true, null, 'Pengguna berhasil dihapus.');
+  } catch (err) {
+    return buildResponse(false, null, err.message || 'Gagal menghapus pengguna.');
+  }
+}
+
+/**
+ * Helper Server-Side: Memverifikasi akses penugasan dan mencegah IDOR.
+ * Mengembalikan objek penugasan beserta info tahun ajaran jika valid.
+ *
+ * @param {Object} sessionUser { id, role }
+ * @param {string} [requestedWaliKelasId]
+ * @return {{ assignment: Object, activeYear: Object }}
+ */
+function resolveWaliKelasScope(sessionUser, requestedWaliKelasId) {
+  const wkData = getSheetDataBatch('wali_kelas');
+  const taData = getSheetDataBatch('tahun_ajaran');
+
+  const activeYear = taData.rows.find(t => t.is_active === true || String(t.is_active).toLowerCase() === 'true');
+
+  if (sessionUser.role === 'wali_kelas') {
+    // Wali kelas hanya boleh mengakses penugasan miliknya
+    let assignment = null;
+    if (requestedWaliKelasId) {
+      assignment = wkData.rows.find(w => w.id === requestedWaliKelasId && w.user_id === sessionUser.id);
+      if (!assignment) {
+        throw new Error('Akses ditolak: Anda tidak memiliki akses ke penugasan kelas ini.');
+      }
+    } else {
+      // Ambil penugasan aktif pada tahun ajaran aktif
+      if (activeYear) {
+        assignment = wkData.rows.find(w =>
+          w.user_id === sessionUser.id &&
+          w.tahun_ajaran_id === activeYear.id &&
+          (w.is_active === true || String(w.is_active).toLowerCase() === 'true')
+        );
+      }
+      if (!assignment) {
+        // Fallback penugasan terakhir milik guru
+        assignment = wkData.rows.find(w => w.user_id === sessionUser.id && (w.is_active === true || String(w.is_active).toLowerCase() === 'true'));
+      }
+    }
+
+    if (!assignment) {
+      throw new Error('Anda belum memiliki penugasan wali kelas yang aktif.');
+    }
+
+    const ta = taData.rows.find(t => t.id === assignment.tahun_ajaran_id);
+    return { assignment, activeYear: ta || activeYear };
+  } else if (sessionUser.role === 'kepala_sekolah') {
+    // Kepala sekolah boleh mengakses penugasan mana pun jika diminta
+    let assignment = null;
+    if (requestedWaliKelasId) {
+      assignment = wkData.rows.find(w => w.id === requestedWaliKelasId);
+      if (!assignment) {
+        throw new Error('Data penugasan kelas tidak ditemukan.');
+      }
+    } else if (activeYear) {
+      // Ambil penugasan pertama di tahun ajaran aktif jika ada
+      assignment = wkData.rows.find(w => w.tahun_ajaran_id === activeYear.id) || wkData.rows[0] || null;
+    }
+
+    const ta = assignment ? taData.rows.find(t => t.id === assignment.tahun_ajaran_id) : activeYear;
+    return { assignment, activeYear: ta || activeYear };
+  }
+
+  throw new Error('Akses ditolak: Role tidak valid.');
+}
+
+/**
+ * Mengambil daftar siswa berdasarkan penugasan wali kelas.
+ * Otorisasi: kepala_sekolah atau wali_kelas.
+ * Pencegahan IDOR: Wali kelas dibatasi hanya pada penugasan miliknya di server.
+ *
+ * @param {string} sessionToken
+ * @param {string} [filterWaliKelasId]
+ * @return {{ success: boolean, data: Object, message: string }}
+ */
+function apiGetSiswaList(sessionToken, filterWaliKelasId) {
+  try {
+    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    const { assignment, activeYear } = resolveWaliKelasScope(user, filterWaliKelasId);
+
+    const sData = getSheetDataBatch('siswa');
+    const uData = getSheetDataBatch('user');
+    const wkData = getSheetDataBatch('wali_kelas');
+    const taData = getSheetDataBatch('tahun_ajaran');
+
+    let rows = sData.rows;
+
+    // Filter siswa sesuai penugasan
+    if (assignment) {
+      rows = rows.filter(s => s.wali_kelas_id === assignment.id);
+    } else if (user.role === 'wali_kelas') {
+      rows = [];
+    }
+
+    // Hitung riwayat nilai untuk flag proteksi
+    let nData = { rows: [] };
+    let skData = { rows: [] };
+    let rkData = { rows: [] };
+    try { nData = getSheetDataBatch('nilai_mata_pelajaran'); } catch (e) {}
+    try { skData = getSheetDataBatch('nilai_sikap'); } catch (e) {}
+    try { rkData = getSheetDataBatch('rekap_kehadiran'); } catch (e) {}
+
+    const siswaList = rows.map(s => {
+      const hasGrades = nData.rows.some(n => n.siswa_id === s.id) ||
+                        skData.rows.some(sk => sk.siswa_id === s.id) ||
+                        rkData.rows.some(rk => rk.siswa_id === s.id);
+      return {
+        id: s.id,
+        wali_kelas_id: s.wali_kelas_id,
+        no_absen: Number(s.no_absen) || 0,
+        nisn: s.nisn || '-',
+        nis: s.nis || '-',
+        nama: s.nama,
+        jenis_kelamin: s.jenis_kelamin,
+        tempat_lahir: s.tempat_lahir || '',
+        tanggal_lahir: s.tanggal_lahir ? String(s.tanggal_lahir).substring(0, 10) : '',
+        wali_murid: s.wali_murid || '',
+        nomor_telepon: s.nomor_telepon || '',
+        is_active: (s.is_active === true || String(s.is_active).toLowerCase() === 'true'),
+        hasGrades: hasGrades,
+        created_at: s.created_at,
+        updated_at: s.updated_at
+      };
+    });
+
+    siswaList.sort((a, b) => a.no_absen - b.no_absen);
+
+    // Detail penugasan terkait
+    let penugasanInfo = null;
+    if (assignment) {
+      const teacher = uData.rows.find(u => u.id === assignment.user_id);
+      const ta = taData.rows.find(t => t.id === assignment.tahun_ajaran_id);
+      penugasanInfo = {
+        id: assignment.id,
+        kelas: String(assignment.kelas),
+        guruNama: teacher ? teacher.nama : '-',
+        guruNip: teacher ? (teacher.nip || '-') : '-',
+        tahunAjaran: ta ? ta.tahun_ajaran : '-',
+        semester: ta ? ta.semester : '-',
+        isLocked: ta ? (ta.is_locked === true || String(ta.is_locked).toLowerCase() === 'true') : false,
+        isActive: assignment.is_active === true || String(assignment.is_active).toLowerCase() === 'true'
+      };
+    }
+
+    // Daftar opsi penugasan untuk filter (khusus Kepala Sekolah)
+    let penugasanOptions = [];
+    if (user.role === 'kepala_sekolah') {
+      penugasanOptions = wkData.rows.map(w => {
+        const teacher = uData.rows.find(u => u.id === w.user_id);
+        const ta = taData.rows.find(t => t.id === w.tahun_ajaran_id);
+        return {
+          id: w.id,
+          kelas: String(w.kelas),
+          guruNama: teacher ? teacher.nama : '-',
+          tahunAjaran: ta ? ta.tahun_ajaran : '-',
+          semester: ta ? ta.semester : '-',
+          isActive: w.is_active === true || String(w.is_active).toLowerCase() === 'true'
+        };
+      });
+      penugasanOptions.sort((a, b) => Number(a.kelas) - Number(b.kelas));
+    }
+
+    return buildResponse(true, {
+      siswa: siswaList,
+      penugasan: penugasanInfo,
+      penugasanOptions: penugasanOptions,
+      isReadOnly: penugasanInfo ? penugasanInfo.isLocked : false
+    }, 'Daftar siswa berhasil dimuat.');
+  } catch (err) {
+    return buildResponse(false, null, err.message || 'Gagal memuat daftar siswa.');
+  }
+}
+
+/**
+ * Menyimpan (Tambah/Edit) Data Siswa.
+ * Otorisasi: kepala_sekolah atau wali_kelas.
+ * Validasi: NISN unik, NIS unik, No. Absen unik per kelas, dan pencegahan edit pada periode terkunci.
+ *
+ * @param {string} sessionToken
+ * @param {Object} payload
+ * @return {{ success: boolean, data: Object|null, message: string }}
+ */
+function apiSaveSiswa(sessionToken, payload) {
+  let lock = null;
+  if (typeof LockService !== 'undefined') {
+    lock = LockService.getScriptLock();
+    lock.waitLock(30000);
+  }
+  try {
+    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+
+    if (!payload || typeof payload !== 'object') {
+      return buildResponse(false, null, 'Data siswa tidak valid.');
+    }
+
+    const editId = payload.id ? String(payload.id).trim() : null;
+    const requestedWkId = payload.wali_kelas_id ? String(payload.wali_kelas_id).trim() : null;
+
+    // Verifikasi cakupan penugasan dan proteksi IDOR
+    const { assignment, activeYear } = resolveWaliKelasScope(user, requestedWkId);
+    if (!assignment) {
+      return buildResponse(false, null, 'Penugasan kelas untuk siswa tidak ditemukan.');
+    }
+
+    // Proteksi periode terkunci
+    const taData = getSheetDataBatch('tahun_ajaran');
+    const ta = taData.rows.find(t => t.id === assignment.tahun_ajaran_id);
+    if (ta && (ta.is_locked === true || String(ta.is_locked).toLowerCase() === 'true')) {
+      return buildResponse(false, null, 'Periode akademik telah dikunci. Data siswa pada periode ini bersifat baca-saja.');
+    }
+
+    const cleanNama = String(payload.nama || '').trim();
+    const rawNoAbsen = payload.no_absen;
+    const noAbsen = parseInt(rawNoAbsen, 10);
+    const cleanJk = String(payload.jenis_kelamin || '').trim().toUpperCase();
+    const cleanNisn = payload.nisn ? String(payload.nisn).trim() : '';
+    const cleanNis = payload.nis ? String(payload.nis).trim() : '';
+    const cleanTempatLahir = payload.tempat_lahir ? String(payload.tempat_lahir).trim() : '';
+    const cleanTanggalLahir = payload.tanggal_lahir ? String(payload.tanggal_lahir).trim() : '';
+    const cleanWaliMurid = payload.wali_murid ? String(payload.wali_murid).trim() : '';
+    const cleanTelepon = payload.nomor_telepon ? String(payload.nomor_telepon).trim() : '';
+    const isActive = payload.is_active === undefined ? true : (payload.is_active === true || String(payload.is_active).toLowerCase() === 'true');
+
+    if (!cleanNama) {
+      return buildResponse(false, null, 'Nama lengkap siswa wajib diisi.');
+    }
+    if (isNaN(noAbsen) || noAbsen < 1) {
+      return buildResponse(false, null, 'Nomor absen wajib berupa bilangan bulat positif (minimal 1).');
+    }
+    if (cleanJk !== 'L' && cleanJk !== 'P') {
+      return buildResponse(false, null, 'Jenis kelamin harus salah satu dari: L (Laki-laki) atau P (Perempuan).');
+    }
+
+    // Validasi NISN jika diisi (harus numerik, 10 digit jika sesuai standar nasional)
+    if (cleanNisn && cleanNisn !== '-') {
+      if (!/^\d{8,12}$/.test(cleanNisn)) {
+        return buildResponse(false, null, 'Format NISN harus berupa angka (standar 10 digit).');
+      }
+    }
+
+    const sData = getSheetDataBatch('siswa');
+
+    let existingSiswa = null;
+    if (editId) {
+      existingSiswa = sData.rows.find(s => s.id === editId);
+      if (!existingSiswa) {
+        return buildResponse(false, null, 'Data siswa yang akan diedit tidak ditemukan.');
+      }
+
+      // Pastikan wali kelas tidak mengedit siswa di luar kelasnya
+      if (user.role === 'wali_kelas' && existingSiswa.wali_kelas_id !== assignment.id) {
+        return buildResponse(false, null, 'Akses ditolak: Anda tidak memiliki izin untuk mengedit siswa ini.');
+      }
+    }
+
+    // Validasi nomor absen unik per penugasan wali kelas
+    const dupAbsen = sData.rows.find(s =>
+      s.wali_kelas_id === assignment.id &&
+      Number(s.no_absen) === noAbsen &&
+      (!editId || s.id !== editId)
+    );
+    if (dupAbsen) {
+      return buildResponse(false, null, 'Nomor absen ' + noAbsen + ' sudah digunakan oleh siswa ' + dupAbsen.nama + ' di kelas ini.');
+    }
+
+    // Validasi NISN unik di sekolah jika diisi
+    if (cleanNisn && cleanNisn !== '-') {
+      const dupNisn = sData.rows.find(s =>
+        String(s.nisn || '').trim() === cleanNisn &&
+        (!editId || s.id !== editId)
+      );
+      if (dupNisn) {
+        return buildResponse(false, null, 'NISN "' + cleanNisn + '" sudah terdaftar untuk siswa ' + dupNisn.nama + '.');
+      }
+    }
+
+    // Validasi NIS unik di sekolah jika diisi
+    if (cleanNis && cleanNis !== '-') {
+      const dupNis = sData.rows.find(s =>
+        String(s.nis || '').trim() === cleanNis &&
+        (!editId || s.id !== editId)
+      );
+      if (dupNis) {
+        return buildResponse(false, null, 'NIS "' + cleanNis + '" sudah terdaftar untuk siswa ' + dupNis.nama + '.');
+      }
+    }
+
+    const nowIso = new Date().toISOString();
+
+    if (editId) {
+      updateSheetRow('siswa', existingSiswa._rowIndex, {
+        no_absen: noAbsen,
+        nisn: cleanNisn,
+        nis: cleanNis,
+        nama: cleanNama,
+        jenis_kelamin: cleanJk,
+        tempat_lahir: cleanTempatLahir,
+        tanggal_lahir: cleanTanggalLahir,
+        wali_murid: cleanWaliMurid,
+        nomor_telepon: cleanTelepon,
+        is_active: isActive,
+        updated_at: nowIso
+      });
+
+      return buildResponse(true, { id: editId }, 'Data siswa berhasil diperbarui.');
+    } else {
+      const newId = getStableUUID();
+      appendSheetRow('siswa', {
+        id: newId,
+        wali_kelas_id: assignment.id,
+        nisn: cleanNisn,
+        nis: cleanNis,
+        no_absen: noAbsen,
+        nama: cleanNama,
+        jenis_kelamin: cleanJk,
+        tempat_lahir: cleanTempatLahir,
+        tanggal_lahir: cleanTanggalLahir,
+        wali_murid: cleanWaliMurid,
+        nomor_telepon: cleanTelepon,
+        is_active: isActive,
+        created_at: nowIso,
+        updated_at: nowIso
+      });
+
+      return buildResponse(true, { id: newId }, 'Data siswa baru berhasil ditambahkan.');
+    }
+  } catch (err) {
+    return buildResponse(false, null, err.message || 'Gagal menyimpan data siswa.');
+  } finally {
+    if (lock) {
+      try { lock.releaseLock(); } catch (e) {}
+    }
+  }
+}
+
+/**
+ * Mengubah status aktif / nonaktif siswa.
+ * Otorisasi: kepala_sekolah atau wali_kelas (penugasan sendiri).
+ *
+ * @param {string} sessionToken
+ * @param {string} siswaId
+ * @param {boolean} isActive
+ * @return {{ success: boolean, data: Object|null, message: string }}
+ */
+function apiToggleSiswaStatus(sessionToken, siswaId, isActive) {
+  try {
+    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+
+    if (!siswaId) {
+      return buildResponse(false, null, 'ID siswa diperlukan.');
+    }
+
+    const sData = getSheetDataBatch('siswa');
+    const existingSiswa = sData.rows.find(s => s.id === siswaId);
+    if (!existingSiswa) {
+      return buildResponse(false, null, 'Data siswa tidak ditemukan.');
+    }
+
+    // Verifikasi hak akses wali kelas
+    if (user.role === 'wali_kelas') {
+      const wkData = getSheetDataBatch('wali_kelas');
+      const assignment = wkData.rows.find(w => w.id === existingSiswa.wali_kelas_id && w.user_id === user.id);
+      if (!assignment) {
+        return buildResponse(false, null, 'Akses ditolak: Anda tidak memiliki wewenang untuk mengubah status siswa ini.');
+      }
+    }
+
+    const targetActive = !!isActive;
+    const nowIso = new Date().toISOString();
+
+    updateSheetRow('siswa', existingSiswa._rowIndex, {
+      is_active: targetActive,
+      updated_at: nowIso
+    });
+
+    const msg = targetActive ? 'Siswa berhasil diaktifkan kembali.' : 'Siswa berhasil dinonaktifkan.';
+    return buildResponse(true, { id: siswaId, is_active: targetActive }, msg);
+  } catch (err) {
+    return buildResponse(false, null, err.message || 'Gagal mengubah status siswa.');
+  }
+}
+
+/**
+ * Menghapus siswa secara permanen (hanya jika belum memiliki data nilai/kehadiran).
+ * Otorisasi: kepala_sekolah atau wali_kelas (penugasan sendiri).
+ *
+ * @param {string} sessionToken
+ * @param {string} siswaId
+ * @return {{ success: boolean, data: null, message: string }}
+ */
+function apiDeleteSiswa(sessionToken, siswaId) {
+  try {
+    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+
+    if (!siswaId) {
+      return buildResponse(false, null, 'ID siswa diperlukan.');
+    }
+
+    const sData = getSheetDataBatch('siswa');
+    const existingSiswa = sData.rows.find(s => s.id === siswaId);
+    if (!existingSiswa) {
+      return buildResponse(false, null, 'Data siswa tidak ditemukan.');
+    }
+
+    // Verifikasi hak akses wali kelas
+    const wkData = getSheetDataBatch('wali_kelas');
+    const assignment = wkData.rows.find(w => w.id === existingSiswa.wali_kelas_id);
+    if (user.role === 'wali_kelas') {
+      if (!assignment || assignment.user_id !== user.id) {
+        return buildResponse(false, null, 'Akses ditolak: Anda tidak memiliki wewenang untuk menghapus siswa ini.');
+      }
+    }
+
+    // Proteksi periode terkunci
+    if (assignment) {
+      const taData = getSheetDataBatch('tahun_ajaran');
+      const ta = taData.rows.find(t => t.id === assignment.tahun_ajaran_id);
+      if (ta && (ta.is_locked === true || String(ta.is_locked).toLowerCase() === 'true')) {
+        return buildResponse(false, null, 'Periode akademik telah dikunci. Data siswa pada periode ini tidak dapat dihapus.');
+      }
+    }
+
+    // Proteksi Integritas Relasi Historis: Nilai Mapel, Nilai Sikap, Rekap Kehadiran
+    try {
+      const nData = getSheetDataBatch('nilai_mata_pelajaran');
+      if (nData.rows.some(n => n.siswa_id === siswaId)) {
+        return buildResponse(false, null, 'Siswa ini sudah memiliki riwayat nilai mata pelajaran dan tidak boleh dihapus permanen. Silakan nonaktifkan status siswa.');
+      }
+    } catch (e) {}
+
+    try {
+      const skData = getSheetDataBatch('nilai_sikap');
+      if (skData.rows.some(sk => sk.siswa_id === siswaId)) {
+        return buildResponse(false, null, 'Siswa ini sudah memiliki riwayat penilaian sikap dan tidak boleh dihapus permanen. Silakan nonaktifkan status siswa.');
+      }
+    } catch (e) {}
+
+    try {
+      const rkData = getSheetDataBatch('rekap_kehadiran');
+      if (rkData.rows.some(rk => rk.siswa_id === siswaId)) {
+        return buildResponse(false, null, 'Siswa ini sudah memiliki riwayat kehadiran dan tidak boleh dihapus permanen. Silakan nonaktifkan status siswa.');
+      }
+    } catch (e) {}
+
+    deleteSheetRow('siswa', existingSiswa._rowIndex);
+    return buildResponse(true, null, 'Data siswa berhasil dihapus.');
+  } catch (err) {
+    return buildResponse(false, null, err.message || 'Gagal menghapus siswa.');
+  }
+}
+
+/**
+ * Mengambil daftar mata pelajaran berdasarkan penugasan wali kelas.
+ * Otorisasi: kepala_sekolah atau wali_kelas.
+ *
+ * @param {string} sessionToken
+ * @param {string} [filterWaliKelasId]
+ * @return {{ success: boolean, data: Object, message: string }}
+ */
+function apiGetMataPelajaranList(sessionToken, filterWaliKelasId) {
+  try {
+    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    const { assignment } = resolveWaliKelasScope(user, filterWaliKelasId);
+
+    const mapelData = getSheetDataBatch('mata_pelajaran');
+    const uData = getSheetDataBatch('user');
+    const wkData = getSheetDataBatch('wali_kelas');
+    const taData = getSheetDataBatch('tahun_ajaran');
+
+    let rows = mapelData.rows;
+
+    if (assignment) {
+      rows = rows.filter(m => m.wali_kelas_id === assignment.id);
+    } else if (user.role === 'wali_kelas') {
+      rows = [];
+    }
+
+    let nData = { rows: [] };
+    try {
+      nData = getSheetDataBatch('nilai_mata_pelajaran');
+    } catch (e) {}
+
+    const mapelList = rows.map(m => {
+      const hasGrades = nData.rows.some(n => n.mata_pelajaran_id === m.id);
+      return {
+        id: m.id,
+        wali_kelas_id: m.wali_kelas_id,
+        kode_mata_pelajaran: m.kode_mata_pelajaran,
+        mata_pelajaran: m.mata_pelajaran,
+        is_active: (m.is_active === true || String(m.is_active).toLowerCase() === 'true'),
+        hasGrades: hasGrades,
+        created_at: m.created_at,
+        updated_at: m.updated_at
+      };
+    });
+
+    mapelList.sort((a, b) => a.kode_mata_pelajaran.localeCompare(b.kode_mata_pelajaran));
+
+    let penugasanInfo = null;
+    if (assignment) {
+      const teacher = uData.rows.find(u => u.id === assignment.user_id);
+      const ta = taData.rows.find(t => t.id === assignment.tahun_ajaran_id);
+      penugasanInfo = {
+        id: assignment.id,
+        kelas: String(assignment.kelas),
+        guruNama: teacher ? teacher.nama : '-',
+        guruNip: teacher ? (teacher.nip || '-') : '-',
+        tahunAjaran: ta ? ta.tahun_ajaran : '-',
+        semester: ta ? ta.semester : '-',
+        isLocked: ta ? (ta.is_locked === true || String(ta.is_locked).toLowerCase() === 'true') : false,
+        isActive: assignment.is_active === true || String(assignment.is_active).toLowerCase() === 'true'
+      };
+    }
+
+    return buildResponse(true, {
+      mataPelajaran: mapelList,
+      penugasan: penugasanInfo,
+      isReadOnly: penugasanInfo ? penugasanInfo.isLocked : false
+    }, 'Daftar mata pelajaran berhasil dimuat.');
+  } catch (err) {
+    return buildResponse(false, null, err.message || 'Gagal memuat daftar mata pelajaran.');
+  }
+}
+
+/**
+ * Menyimpan (Tambah/Edit) Mata Pelajaran.
+ * Otorisasi: kepala_sekolah atau wali_kelas.
+ *
+ * @param {string} sessionToken
+ * @param {Object} payload
+ * @return {{ success: boolean, data: Object|null, message: string }}
+ */
+function apiSaveMataPelajaran(sessionToken, payload) {
+  let lock = null;
+  if (typeof LockService !== 'undefined') {
+    lock = LockService.getScriptLock();
+    lock.waitLock(30000);
+  }
+  try {
+    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+
+    if (!payload || typeof payload !== 'object') {
+      return buildResponse(false, null, 'Data mata pelajaran tidak valid.');
+    }
+
+    const editId = payload.id ? String(payload.id).trim() : null;
+    const requestedWkId = payload.wali_kelas_id ? String(payload.wali_kelas_id).trim() : null;
+
+    // Verifikasi penugasan dan proteksi IDOR
+    const { assignment } = resolveWaliKelasScope(user, requestedWkId);
+    if (!assignment) {
+      return buildResponse(false, null, 'Penugasan kelas untuk mata pelajaran tidak ditemukan.');
+    }
+
+    // Proteksi periode terkunci
+    const taData = getSheetDataBatch('tahun_ajaran');
+    const ta = taData.rows.find(t => t.id === assignment.tahun_ajaran_id);
+    if (ta && (ta.is_locked === true || String(ta.is_locked).toLowerCase() === 'true')) {
+      return buildResponse(false, null, 'Periode akademik telah dikunci. Mata pelajaran pada periode ini bersifat baca-saja.');
+    }
+
+    const cleanKode = String(payload.kode_mata_pelajaran || '').trim().toUpperCase();
+    const cleanNama = String(payload.mata_pelajaran || '').trim();
+    const isActive = payload.is_active === undefined ? true : (payload.is_active === true || String(payload.is_active).toLowerCase() === 'true');
+
+    if (!cleanKode) {
+      return buildResponse(false, null, 'Kode mata pelajaran wajib diisi.');
+    }
+    if (!cleanNama) {
+      return buildResponse(false, null, 'Nama mata pelajaran wajib diisi.');
+    }
+
+    const mapelData = getSheetDataBatch('mata_pelajaran');
+
+    let existingMapel = null;
+    if (editId) {
+      existingMapel = mapelData.rows.find(m => m.id === editId);
+      if (!existingMapel) {
+        return buildResponse(false, null, 'Data mata pelajaran yang akan diedit tidak ditemukan.');
+      }
+
+      if (user.role === 'wali_kelas' && existingMapel.wali_kelas_id !== assignment.id) {
+        return buildResponse(false, null, 'Akses ditolak: Anda tidak memiliki wewenang untuk mengedit mata pelajaran ini.');
+      }
+    }
+
+    // Validasi keunikan kode mapel dalam penugasan
+    const dupKode = mapelData.rows.find(m =>
+      m.wali_kelas_id === assignment.id &&
+      m.kode_mata_pelajaran.toUpperCase() === cleanKode &&
+      (!editId || m.id !== editId)
+    );
+    if (dupKode) {
+      return buildResponse(false, null, 'Kode mata pelajaran "' + cleanKode + '" sudah digunakan pada kelas ini.');
+    }
+
+    // Validasi keunikan nama mapel dalam penugasan
+    const dupNama = mapelData.rows.find(m =>
+      m.wali_kelas_id === assignment.id &&
+      m.mata_pelajaran.toLowerCase() === cleanNama.toLowerCase() &&
+      (!editId || m.id !== editId)
+    );
+    if (dupNama) {
+      return buildResponse(false, null, 'Mata pelajaran "' + cleanNama + '" sudah terdaftar pada kelas ini.');
+    }
+
+    const nowIso = new Date().toISOString();
+
+    if (editId) {
+      updateSheetRow('mata_pelajaran', existingMapel._rowIndex, {
+        kode_mata_pelajaran: cleanKode,
+        mata_pelajaran: cleanNama,
+        is_active: isActive,
+        updated_at: nowIso
+      });
+
+      return buildResponse(true, { id: editId }, 'Mata pelajaran berhasil diperbarui.');
+    } else {
+      const newId = getStableUUID();
+      appendSheetRow('mata_pelajaran', {
+        id: newId,
+        wali_kelas_id: assignment.id,
+        kode_mata_pelajaran: cleanKode,
+        mata_pelajaran: cleanNama,
+        is_active: isActive,
+        created_at: nowIso,
+        updated_at: nowIso
+      });
+
+      return buildResponse(true, { id: newId }, 'Mata pelajaran baru berhasil ditambahkan.');
+    }
+  } catch (err) {
+    return buildResponse(false, null, err.message || 'Gagal menyimpan mata pelajaran.');
+  } finally {
+    if (lock) {
+      try { lock.releaseLock(); } catch (e) {}
+    }
+  }
+}
+
+/**
+ * Mengubah status aktif / nonaktif mata pelajaran.
+ * Otorisasi: kepala_sekolah atau wali_kelas.
+ *
+ * @param {string} sessionToken
+ * @param {string} mapelId
+ * @param {boolean} isActive
+ * @return {{ success: boolean, data: Object|null, message: string }}
+ */
+function apiToggleMataPelajaranStatus(sessionToken, mapelId, isActive) {
+  try {
+    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+
+    if (!mapelId) {
+      return buildResponse(false, null, 'ID mata pelajaran diperlukan.');
+    }
+
+    const mapelData = getSheetDataBatch('mata_pelajaran');
+    const existingMapel = mapelData.rows.find(m => m.id === mapelId);
+    if (!existingMapel) {
+      return buildResponse(false, null, 'Data mata pelajaran tidak ditemukan.');
+    }
+
+    if (user.role === 'wali_kelas') {
+      const wkData = getSheetDataBatch('wali_kelas');
+      const assignment = wkData.rows.find(w => w.id === existingMapel.wali_kelas_id && w.user_id === user.id);
+      if (!assignment) {
+        return buildResponse(false, null, 'Akses ditolak: Anda tidak memiliki wewenang untuk mengubah status mata pelajaran ini.');
+      }
+    }
+
+    const targetActive = !!isActive;
+    const nowIso = new Date().toISOString();
+
+    updateSheetRow('mata_pelajaran', existingMapel._rowIndex, {
+      is_active: targetActive,
+      updated_at: nowIso
+    });
+
+    const msg = targetActive ? 'Mata pelajaran berhasil diaktifkan.' : 'Mata pelajaran berhasil dinonaktifkan.';
+    return buildResponse(true, { id: mapelId, is_active: targetActive }, msg);
+  } catch (err) {
+    return buildResponse(false, null, err.message || 'Gagal mengubah status mata pelajaran.');
+  }
+}
+
+/**
+ * Menghapus mata pelajaran permanen (hanya jika belum memiliki data nilai).
+ * Otorisasi: kepala_sekolah atau wali_kelas.
+ *
+ * @param {string} sessionToken
+ * @param {string} mapelId
+ * @return {{ success: boolean, data: null, message: string }}
+ */
+function apiDeleteMataPelajaran(sessionToken, mapelId) {
+  try {
+    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+
+    if (!mapelId) {
+      return buildResponse(false, null, 'ID mata pelajaran diperlukan.');
+    }
+
+    const mapelData = getSheetDataBatch('mata_pelajaran');
+    const existingMapel = mapelData.rows.find(m => m.id === mapelId);
+    if (!existingMapel) {
+      return buildResponse(false, null, 'Data mata pelajaran tidak ditemukan.');
+    }
+
+    const wkData = getSheetDataBatch('wali_kelas');
+    const assignment = wkData.rows.find(w => w.id === existingMapel.wali_kelas_id);
+    if (user.role === 'wali_kelas') {
+      if (!assignment || assignment.user_id !== user.id) {
+        return buildResponse(false, null, 'Akses ditolak: Anda tidak memiliki wewenang untuk menghapus mata pelajaran ini.');
+      }
+    }
+
+    // Proteksi periode terkunci
+    if (assignment) {
+      const taData = getSheetDataBatch('tahun_ajaran');
+      const ta = taData.rows.find(t => t.id === assignment.tahun_ajaran_id);
+      if (ta && (ta.is_locked === true || String(ta.is_locked).toLowerCase() === 'true')) {
+        return buildResponse(false, null, 'Periode akademik telah dikunci. Mata pelajaran pada periode ini tidak dapat dihapus.');
+      }
+    }
+
+    // Proteksi integritas nilai
+    try {
+      const nData = getSheetDataBatch('nilai_mata_pelajaran');
+      const hasGrades = nData.rows.some(n => n.mata_pelajaran_id === mapelId);
+      if (hasGrades) {
+        return buildResponse(false, null, 'Mata pelajaran ini sudah memiliki riwayat nilai siswa dan tidak dapat dihapus permanen. Silakan nonaktifkan status mata pelajaran.');
+      }
+    } catch (e) {}
+
+    deleteSheetRow('mata_pelajaran', existingMapel._rowIndex);
+    return buildResponse(true, null, 'Mata pelajaran berhasil dihapus.');
+  } catch (err) {
+    return buildResponse(false, null, err.message || 'Gagal menghapus mata pelajaran.');
+  }
+}
+
+// ============================================================================
+// 7. ENTRYPOINT APLIKASI WEB (doGet)
 // ============================================================================
 
 /**
@@ -1623,6 +2668,19 @@ if (typeof module !== 'undefined' && module.exports) {
     apiSavePenugasan,
     apiToggleStatusPenugasan,
     apiDeletePenugasan,
+    apiGetUsersList,
+    apiSaveUser,
+    apiToggleUserStatus,
+    apiDeleteUser,
+    resolveWaliKelasScope,
+    apiGetSiswaList,
+    apiSaveSiswa,
+    apiToggleSiswaStatus,
+    apiDeleteSiswa,
+    apiGetMataPelajaranList,
+    apiSaveMataPelajaran,
+    apiToggleMataPelajaranStatus,
+    apiDeleteMataPelajaran,
     requireAuth,
     doGet
   };
