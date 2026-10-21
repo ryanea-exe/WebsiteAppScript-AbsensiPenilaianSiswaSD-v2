@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      color: #202124;
+      background-color: #ffffff;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    h2 {
+      margin-top: 0;
+      font-size: 17px;
+      font-weight: 600;
+      color: #1a73e8;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    p.desc {
+      color: #5f6368;
+      font-size: 13px;
+      margin-bottom: 18px;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      font-weight: 500;
+      font-size: 13px;
+      margin-bottom: 6px;
+      color: #3c4043;
+    }
+    .account-badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background-color: #e8f0fe;
+      color: #1a73e8;
+      margin-left: 4px;
+    }
+    input[type="password"] {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 9px 12px;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    input[type="password"]:focus {
+      border-color: #1a73e8;
+      box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
+    }
+    .hint {
+      font-size: 11px;
+      color: #80868b;
+      margin-top: 4px;
+    }
+    .btn-container {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 24px;
+      padding-top: 16px;
+      border-top: 1px solid #ebebeb;
+    }
+    button {
+      padding: 8px 18px;
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: background-color 0.2s;
+    }
+    button.btn-secondary {
+      background-color: #ffffff;
+      color: #5f6368;
+      border-color: #dadce0;
+    }
+    button.btn-secondary:hover {
+      background-color: #f1f3f4;
+    }
+    button.btn-primary {
+      background-color: #1a73e8;
+      color: #ffffff;
+    }
+    button.btn-primary:hover {
+      background-color: #1765cc;
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    #errorBox {
+      display: none;
+      background-color: #fce8e6;
+      color: #c5221f;
+      padding: 10px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      margin-bottom: 14px;
+      border-left: 3px solid #d93025;
+    }
+    #loadingIndicator {
+      display: none;
+      font-size: 13px;
+      color: #1a73e8;
+      margin-top: 12px;
+      text-align: center;
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+  <h2>🔐 Inisialisasi Kredensial Akun Pengujian</h2>
+  <p class="desc">
+    Masukkan kata sandi baru untuk 2 akun pengujian sistem. Kata sandi disamarkan di layar dan langsung dienkripsi server-side menggunakan PBKDF2 (100.000 iterasi).
+  </p>
+
+  <div id="errorBox"></div>
+
+  <form id="seedForm" onsubmit="handleFormSubmit(event)">
+    <div class="form-group">
+      <label for="kepsekPassword">
+        Kata Sandi Kepala Sekolah <span class="account-badge">kepsek_test</span>
+      </label>
+      <input type="password" id="kepsekPassword" autocomplete="new-password" placeholder="Minimal 8 karakter" required minlength="8">
+      <div class="hint">Role: kepala_sekolah (Drs. H. Ahmad Subagja, M.Pd.)</div>
+    </div>
+
+    <div class="form-group">
+      <label for="waliPassword">
+        Kata Sandi Wali Kelas <span class="account-badge">guru_test</span>
+      </label>
+      <input type="password" id="waliPassword" autocomplete="new-password" placeholder="Minimal 8 karakter" required minlength="8">
+      <div class="hint">Role: wali_kelas (Siti Rahmawati, S.Pd. — Kelas 4)</div>
+    </div>
+
+    <div id="loadingIndicator">
+      Memproses dan mengenkripsi kredensial... Mohon tunggu.
+    </div>
+
+    <div class="btn-container">
+      <button type="button" class="btn-secondary" id="btnCancel" onclick="handleCancel()">Batal</button>
+      <button type="submit" class="btn-primary" id="btnSubmit">Jalankan Seed</button>
+    </div>
+  </form>
+
+  <script>
+    function clearSensitiveFields() {
+      var k = document.getElementById('kepsekPassword');
+      var w = document.getElementById('waliPassword');
+      if (k) k.value = '';
+      if (w) w.value = '';
+    }
+
+    function showError(msg) {
+      var box = document.getElementById('errorBox');
+      box.textContent = msg || 'Terjadi kesalahan sistem saat memproses kredensial.';
+      box.style.display = 'block';
+    }
+
+    function hideError() {
+      var box = document.getElementById('errorBox');
+      box.style.display = 'none';
+      box.textContent = '';
+    }
+
+    function setLoading(isLoading) {
+      document.getElementById('loadingIndicator').style.display = isLoading ? 'block' : 'none';
+      document.getElementById('btnSubmit').disabled = isLoading;
+      document.getElementById('btnCancel').disabled = isLoading;
+      document.getElementById('kepsekPassword').disabled = isLoading;
+      document.getElementById('waliPassword').disabled = isLoading;
+    }
+
+    function handleCancel() {
+      clearSensitiveFields();
+      if (typeof google !== 'undefined' && google.script && google.script.host) {
+        google.script.host.close();
+      }
+    }
+
+    function handleFormSubmit(e) {
+      e.preventDefault();
+      hideError();
+
+      var kVal = (document.getElementById('kepsekPassword').value || '').trim();
+      var wVal = (document.getElementById('waliPassword').value || '').trim();
+
+      if (kVal.length < 8) {
+        showError('Kata sandi Kepala Sekolah minimal 8 karakter.');
+        return;
+      }
+      if (wVal.length < 8) {
+        showError('Kata sandi Wali Kelas minimal 8 karakter.');
+        return;
+      }
+
+      setLoading(true);
+
+      var payload = {
+        kepsekPassword: kVal,
+        waliPassword: wVal
+      };
+
+      if (typeof google === 'undefined' || !google.script || !google.script.run) {
+        setLoading(false);
+        clearSensitiveFields();
+        showError('Lingkungan Apps Script tidak terdeteksi.');
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function(response) {
+          clearSensitiveFields();
+          setLoading(false);
+          if (google.script.host) {
+            google.script.host.close();
+          }
+        })
+        .withFailureHandler(function(err) {
+          clearSensitiveFields();
+          setLoading(false);
+          showError(err && err.message ? err.message : 'Gagal mengeksekusi seed database.');
+        })
+        .submitSecureSeedCredentials(payload);
+    }
+  </script>
+</body>
+</html>

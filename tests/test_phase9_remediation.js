@@ -33,10 +33,21 @@ const codeFuncMatches = [...codeGsContent.matchAll(/^function\s+([a-zA-Z0-9_]+)\
 // Ambil seluruh deklarasi fungsi global top-level di setup.gs
 const setupFuncMatches = [...setupGsContent.matchAll(/^function\s+([a-zA-Z0-9_]+)\s*\(/gm)].map(m => m[1]);
 
-// 1. Verifikasi setup.gs: SELURUH fungsi HARUS berakhiran underscore _
-const nonPrivateSetup = setupFuncMatches.filter(fn => !fn.endsWith('_'));
-assert.strictEqual(nonPrivateSetup.length, 0, `Ditemukan fungsi publik yang tidak berakhiran underscore di setup.gs: ${nonPrivateSetup.join(', ')}`);
-console.log(`✓ setup.gs aman: Seluruh ${setupFuncMatches.length} fungsi berakhiran underscore _ (private RPC).`);
+// 1. Verifikasi setup.gs: SELURUH fungsi HARUS berakhiran underscore _ kecuali whitelist wrapper menu publik resmi
+const ALLOWED_SETUP_PUBLIC_WRAPPERS = new Set([
+  'onOpen',
+  'menuAuditSkema',
+  'menuSetupDatabase',
+  'menuSeedDatabase',
+  'runSchemaCheckFromEditor',
+  'submitSecureSeedCredentials'
+]);
+const invalidPublicSetup = setupFuncMatches.filter(fn => !fn.endsWith('_') && !ALLOWED_SETUP_PUBLIC_WRAPPERS.has(fn));
+assert.strictEqual(invalidPublicSetup.length, 0, `Ditemukan fungsi publik tidak sah di setup.gs: ${invalidPublicSetup.join(', ')}`);
+ALLOWED_SETUP_PUBLIC_WRAPPERS.forEach(fn => {
+  assert(setupFuncMatches.includes(fn), `Fungsi wrapper publik ${fn} tidak ditemukan di setup.gs`);
+});
+console.log(`✓ setup.gs aman: Tepat ${ALLOWED_SETUP_PUBLIC_WRAPPERS.size} wrapper menu publik resmi terverifikasi dan ${setupFuncMatches.filter(fn => fn.endsWith('_')).length} fungsi internal berakhiran underscore _ (private RPC).`);
 
 // 2. Verifikasi code.gs: Fungsi publik HANYA boleh diawali api* ATAU bernama doGet
 const invalidPublicCode = codeFuncMatches.filter(fn => {
