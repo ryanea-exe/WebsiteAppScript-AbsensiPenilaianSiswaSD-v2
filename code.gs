@@ -788,7 +788,7 @@ function apiGetInitialDashboard(sessionToken) {
 
     // 1. Profil Sekolah (Sheet pengaturan)
     let schoolProfile = {
-      namaSekolah: 'SD Negeri Percobaan',
+      namaSekolah: '',
       namaKepalaSekolah: '',
       nipKepalaSekolah: '',
       logoSekolah: ''
@@ -797,7 +797,7 @@ function apiGetInitialDashboard(sessionToken) {
       const pengData = getSheetDataBatch('pengaturan');
       if (pengData.rows.length > 0) {
         const row = pengData.rows[0];
-        schoolProfile.namaSekolah = row.nama_sekolah || schoolProfile.namaSekolah;
+        schoolProfile.namaSekolah = row.nama_sekolah || '';
         schoolProfile.namaKepalaSekolah = row.nama_kepala_sekolah || '';
         schoolProfile.nipKepalaSekolah = row.nip_kepala_sekolah || '';
         schoolProfile.logoSekolah = row.logo_sekolah || '';
@@ -843,6 +843,10 @@ function apiGetInitialDashboard(sessionToken) {
       let uData = null;
       let wkData = null;
       let sData = null;
+      let mData = null;
+      let nData = { rows: [] };
+      let skData = { rows: [] };
+      let rkData = { rows: [] };
 
       try {
         uData = getSheetDataBatch('user');
@@ -863,41 +867,116 @@ function apiGetInitialDashboard(sessionToken) {
         totalSiswa = sData.rows.filter(s => s.is_active !== false && String(s.is_active).toLowerCase() !== 'false').length;
       } catch (e) {}
 
+      try { mData = getSheetDataBatch('mata_pelajaran'); } catch (e) {}
+      try { nData = getSheetDataBatch('nilai_mata_pelajaran'); } catch (e) {}
+      try { skData = getSheetDataBatch('nilai_sikap'); } catch (e) {}
+      try { rkData = getSheetDataBatch('rekap_kehadiran'); } catch (e) {}
+
       // Breakdown 6 kelas (Kelas 1 - Kelas 6) untuk Kepala Sekolah
       const kelasOverview = [];
       const wkRows = (wkData && wkData.rows) ? wkData.rows : [];
       const uRows = (uData && uData.rows) ? uData.rows : [];
       const sRows = (sData && sData.rows) ? sData.rows : [];
+      const mRows = (mData && mData.rows) ? mData.rows : [];
+
+      let kelasSiapRapor = 0;
+      let kelasBelumSiap = 0;
 
       for (let k = 1; k <= 6; k++) {
         const kStr = String(k);
         let detail = null;
+        let mapelCount = 0;
+        let nilaiPct = 0;
+        let sikapPct = 0;
+        let kehadiranPct = 0;
+        let statusLabel = 'Belum Ada Wali Kelas';
+        let isRaporReady = false;
+        let hasWarning = false;
+        let warningMessage = '';
+
         if (activeYear) {
           const matchWk = wkRows.find(w =>
             String(w.kelas) === kStr &&
             w.tahun_ajaran_id === activeYear.id &&
             (w.is_active === true || String(w.is_active).toLowerCase() === 'true')
           );
+
           if (matchWk) {
             const teacher = uRows.find(u => u.id === matchWk.user_id);
-            const count = sRows.filter(s =>
+            const activeSiswaClass = sRows.filter(s =>
               s.wali_kelas_id === matchWk.id &&
               (s.is_active !== false && String(s.is_active).toLowerCase() !== 'false')
-            ).length;
+            );
+            const activeMapelsClass = mRows.filter(m =>
+              m.wali_kelas_id === matchWk.id &&
+              (m.is_active === true || String(m.is_active).toLowerCase() === 'true')
+            );
+            mapelCount = activeMapelsClass.length;
+
+            const totalExpected = activeSiswaClass.length * activeMapelsClass.length;
+            let countCompleteGrades = 0;
+            activeSiswaClass.forEach(s => {
+              activeMapelsClass.forEach(m => {
+                const grade = nData.rows.find(n => n.siswa_id === s.id && n.mata_pelajaran_id === m.id);
+                if (grade && (grade.is_complete === true || String(grade.is_complete).toLowerCase() === 'true')) {
+                  countCompleteGrades++;
+                }
+              });
+            });
+
+            const countSikap = activeSiswaClass.filter(s => skData.rows.some(sk => sk.siswa_id === s.id && sk.predikat && String(sk.predikat).trim() !== '')).length;
+            const countKehadiran = activeSiswaClass.filter(s => rkData.rows.some(rk => rk.siswa_id === s.id && (rk.jumlah_hadir !== '' || rk.jumlah_sakit !== '' || rk.jumlah_izin !== '' || rk.jumlah_alpha !== ''))).length;
+
+            nilaiPct = totalExpected > 0 ? Math.round((countCompleteGrades / totalExpected) * 100) : 0;
+            sikapPct = activeSiswaClass.length > 0 ? Math.round((countSikap / activeSiswaClass.length) * 100) : 0;
+            kehadiranPct = activeSiswaClass.length > 0 ? Math.round((countKehadiran / activeSiswaClass.length) * 100) : 0;
+
+            if (nilaiPct === 100 && sikapPct === 100 && kehadiranPct === 100 && activeSiswaClass.length > 0 && mapelCount > 0) {
+              statusLabel = 'Lengkap';
+              isRaporReady = true;
+              kelasSiapRapor++;
+            } else if (nilaiPct > 0 || sikapPct > 0 || kehadiranPct > 0) {
+              statusLabel = 'Sebagian';
+              kelasBelumSiap++;
+            } else {
+              statusLabel = 'Belum Mulai';
+              kelasBelumSiap++;
+            }
+
+            if (mapelCount === 0) {
+              hasWarning = true;
+              warningMessage = 'Mata pelajaran belum ditambahkan';
+            }
+
             detail = {
               penugasanId: matchWk.id,
               guruNama: teacher ? teacher.nama : 'Guru tidak dikenal',
               guruNip: teacher ? (teacher.nip || '-') : '-',
-              totalSiswa: count
+              totalSiswa: activeSiswaClass.length
             };
+          } else {
+            hasWarning = true;
+            warningMessage = 'Wali kelas belum ditugaskan';
           }
+        } else {
+          hasWarning = true;
+          warningMessage = 'Tahun ajaran belum diaktifkan';
         }
+
         kelasOverview.push({
           kelas: kStr,
           isAssigned: !!detail,
           guruNama: detail ? detail.guruNama : 'Belum Ditugaskan',
           guruNip: detail ? detail.guruNip : '-',
           totalSiswa: detail ? detail.totalSiswa : 0,
+          mapelCount: mapelCount,
+          nilaiPercent: nilaiPct,
+          sikapPercent: sikapPct,
+          kehadiranPercent: kehadiranPct,
+          statusLabel: statusLabel,
+          isRaporReady: isRaporReady,
+          hasWarning: hasWarning,
+          warningMessage: warningMessage,
           details: detail
         });
       }
@@ -907,12 +986,13 @@ function apiGetInitialDashboard(sessionToken) {
         totalGuru: totalGuru,
         totalKelasDitugaskan: totalKelasDitugaskan,
         totalSiswa: totalSiswa,
-        totalKelasMaksimal: 6
+        totalKelasMaksimal: 6,
+        kelasSiapRapor: kelasSiapRapor,
+        kelasBelumSiap: kelasBelumSiap
       };
     } else if (user.role === 'wali_kelas') {
       // Data Ringkasan untuk Wali Kelas
       let penugasanAktif = null;
-      let totalSiswaKelas = 0;
 
       try {
         const wkData = getSheetDataBatch('wali_kelas');
@@ -930,20 +1010,98 @@ function apiGetInitialDashboard(sessionToken) {
           };
 
           const sData = getSheetDataBatch('siswa');
-          totalSiswaKelas = sData.rows.filter(s =>
+          let mData = { rows: [] };
+          let nData = { rows: [] };
+          let skData = { rows: [] };
+          let rkData = { rows: [] };
+          let prData = { rows: [] };
+
+          try { mData = getSheetDataBatch('mata_pelajaran'); } catch (e) {}
+          try { nData = getSheetDataBatch('nilai_mata_pelajaran'); } catch (e) {}
+          try { skData = getSheetDataBatch('nilai_sikap'); } catch (e) {}
+          try { rkData = getSheetDataBatch('rekap_kehadiran'); } catch (e) {}
+          try { prData = getSheetDataBatch('pengaturan_rapor'); } catch (e) {}
+
+          const activeSiswa = sData.rows.filter(s =>
             s.wali_kelas_id === assignment.id &&
             (s.is_active !== false && String(s.is_active).toLowerCase() !== 'false')
-          ).length;
-        }
-      } catch (e) {}
+          );
+          const activeMapels = mData.rows.filter(m =>
+            m.wali_kelas_id === assignment.id &&
+            (m.is_active === true || String(m.is_active).toLowerCase() === 'true')
+          );
 
-      payload.assignment = penugasanAktif;
-      payload.summary = {
-        hasAssignment: !!penugasanAktif,
-        kelas: penugasanAktif ? penugasanAktif.kelas : null,
-        totalSiswa: totalSiswaKelas,
-        kelengkapanNilaiPersen: 0
-      };
+          const totalExpected = activeSiswa.length * activeMapels.length;
+          let countCompleteGrades = 0;
+          activeSiswa.forEach(s => {
+            activeMapels.forEach(m => {
+              const grade = nData.rows.find(n => n.siswa_id === s.id && n.mata_pelajaran_id === m.id);
+              if (grade && (grade.is_complete === true || String(grade.is_complete).toLowerCase() === 'true')) {
+                countCompleteGrades++;
+              }
+            });
+          });
+
+          const countSikap = activeSiswa.filter(s => skData.rows.some(sk => sk.siswa_id === s.id && sk.predikat && String(sk.predikat).trim() !== '')).length;
+          const countKehadiran = activeSiswa.filter(s => rkData.rows.some(rk => rk.siswa_id === s.id && (rk.jumlah_hadir !== '' || rk.jumlah_sakit !== '' || rk.jumlah_izin !== '' || rk.jumlah_alpha !== ''))).length;
+
+          const nilaiPct = totalExpected > 0 ? Math.round((countCompleteGrades / totalExpected) * 100) : 0;
+          const sikapPct = activeSiswa.length > 0 ? Math.round((countSikap / activeSiswa.length) * 100) : 0;
+          const kehadiranPct = activeSiswa.length > 0 ? Math.round((countKehadiran / activeSiswa.length) * 100) : 0;
+          const isRaporReady = (nilaiPct === 100 && sikapPct === 100 && kehadiranPct === 100 && activeSiswa.length > 0 && activeMapels.length > 0);
+
+          // Hitung ranking kompetisi untuk top 3 ranking dashboard
+          const rankingRes = calculateClassRanking(assignment.id, { sData, mData, nData, prData, wkData });
+          const topRanking = (rankingRes.rankedStudents || []).slice(0, 3).map(st => ({
+            rank: st.rank,
+            nama: st.nama,
+            no_absen: st.no_absen,
+            rataNilai: st.avgScore !== null ? st.avgScore : '-',
+            isComplete: st.isStudentComplete,
+            rankingStatus: rankingRes.rankingStatus
+          }));
+
+          payload.assignment = penugasanAktif;
+          payload.summary = {
+            hasAssignment: true,
+            kelas: penugasanAktif.kelas,
+            totalSiswa: activeSiswa.length,
+            totalMapel: activeMapels.length,
+            kelengkapanNilaiPersen: nilaiPct,
+            kelengkapanSikapPersen: sikapPct,
+            kelengkapanKehadiranPersen: kehadiranPct,
+            statusRapor: isRaporReady ? 'Siap Diterbitkan' : 'Belum Lengkap',
+            isRankingFinal: rankingRes.isClassAllComplete,
+            rankingStatus: rankingRes.rankingStatus,
+            topRanking: topRanking
+          };
+        } else {
+          payload.assignment = null;
+          payload.summary = {
+            hasAssignment: false,
+            kelas: null,
+            totalSiswa: 0,
+            totalMapel: 0,
+            kelengkapanNilaiPersen: 0,
+            kelengkapanSikapPersen: 0,
+            kelengkapanKehadiranPersen: 0,
+            statusRapor: 'Belum Ada Penugasan',
+            isRankingFinal: false,
+            rankingStatus: 'Sementara',
+            topRanking: []
+          };
+        }
+      } catch (e) {
+        payload.assignment = penugasanAktif;
+        payload.summary = {
+          hasAssignment: !!penugasanAktif,
+          kelas: penugasanAktif ? penugasanAktif.kelas : null,
+          totalSiswa: 0,
+          kelengkapanNilaiPersen: 0,
+          statusRapor: 'Belum Lengkap',
+          topRanking: []
+        };
+      }
     }
 
     return buildResponse(true, payload, 'Data dashboard awal berhasil dimuat.');
@@ -3674,7 +3832,627 @@ function apiGetKelengkapanPenilaian(sessionToken, requestedWaliKelasId) {
 }
 
 // ============================================================================
-// 7. ENTRYPOINT APLIKASI WEB (doGet)
+// 7. ENDPOINT PHASE 7: DASHBOARD, RANKING SISWA, & RAPOR DIGITAL
+// ============================================================================
+
+/**
+ * Menghitung ranking kompetisi standar (Competition Ranking: 1, 2, 2, 4)
+ * berdasarkan rata-rata nilai akhir seluruh mata pelajaran yang lengkap.
+ *
+ * Aturan:
+ * - Nilai akhir kosong BUKAN nol.
+ * - Rata-rata nilai agregat hanya dihitung dari mata pelajaran yang telah lengkap.
+ * - Jika kelas belum 100% lengkap seluruh mapel dan siswanya, status berlabel "Sementara".
+ * - Aturan tie: nilai rata-rata sama memperoleh ranking yang sama (1, 2, 2, 4).
+ *
+ * @param {string} assignmentId
+ * @param {Object} [cachedData]
+ * @return {{
+ *   rankedStudents: Array<Object>,
+ *   isClassAllComplete: boolean,
+ *   rankingStatus: string,
+ *   totalSiswa: number,
+ *   activeMapels: Array<Object>,
+ *   predikatRanges: Array<Object>
+ * }}
+ */
+function calculateClassRanking(assignmentId, cachedData) {
+  let sData = (cachedData && cachedData.sData);
+  let mData = (cachedData && cachedData.mData);
+  let nData = (cachedData && cachedData.nData);
+  let prData = (cachedData && cachedData.prData);
+  let wkData = (cachedData && cachedData.wkData);
+
+  try { if (!sData) sData = getSheetDataBatch('siswa'); } catch (e) { sData = { rows: [] }; }
+  try { if (!mData) mData = getSheetDataBatch('mata_pelajaran'); } catch (e) { mData = { rows: [] }; }
+  try { if (!nData) nData = getSheetDataBatch('nilai_mata_pelajaran'); } catch (e) { nData = { rows: [] }; }
+  try { if (!prData) prData = getSheetDataBatch('pengaturan_rapor'); } catch (e) { prData = { rows: [] }; }
+  try { if (!wkData) wkData = getSheetDataBatch('wali_kelas'); } catch (e) { wkData = { rows: [] }; }
+
+  const assignment = wkData.rows.find(w => w.id === assignmentId);
+  const activeSiswa = sData.rows.filter(s =>
+    s.wali_kelas_id === assignmentId &&
+    (s.is_active === true || String(s.is_active).toLowerCase() === 'true')
+  );
+  activeSiswa.sort((a, b) => (Number(a.no_absen) || 0) - (Number(b.no_absen) || 0));
+
+  const activeMapels = mData.rows.filter(m =>
+    m.wali_kelas_id === assignmentId &&
+    (m.is_active === true || String(m.is_active).toLowerCase() === 'true')
+  );
+  activeMapels.sort((a, b) => (a.kode_mata_pelajaran || a.kode || '').localeCompare(b.kode_mata_pelajaran || b.kode || ''));
+
+  let predikatRanges = [
+    { label: 'A', min: 90, max: 100 },
+    { label: 'B', min: 80, max: 89.99 },
+    { label: 'C', min: 70, max: 79.99 },
+    { label: 'D', min: 0, max: 69.99 }
+  ];
+  if (assignment) {
+    const prRow = prData.rows.find(p => p.wali_kelas_id === assignment.id && p.tahun_ajaran_id === assignment.tahun_ajaran_id);
+    if (prRow && prRow.predikat) {
+      try {
+        const parsed = typeof prRow.predikat === 'string' ? JSON.parse(prRow.predikat) : prRow.predikat;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          predikatRanges = parsed;
+        }
+      } catch (e) {}
+    }
+  }
+
+  // Evaluasi nilai tiap siswa
+  const studentStats = activeSiswa.map(s => {
+    const mapelScores = {};
+    let completedCount = 0;
+    let sumScore = 0;
+
+    activeMapels.forEach(m => {
+      const grade = nData.rows.find(n => n.siswa_id === s.id && n.mata_pelajaran_id === m.id);
+      const isComplete = grade ? (grade.is_complete === true || String(grade.is_complete).toLowerCase() === 'true') : false;
+      const hasFinal = grade && grade.nilai_akhir !== '' && grade.nilai_akhir !== null && !isNaN(grade.nilai_akhir);
+
+      if (isComplete && hasFinal) {
+        const score = Number(grade.nilai_akhir);
+        completedCount++;
+        sumScore += score;
+        mapelScores[m.id] = {
+          nilai_akhir: score,
+          predikat: resolvePredikatScore(score, predikatRanges),
+          is_complete: true
+        };
+      } else {
+        mapelScores[m.id] = {
+          nilai_akhir: '',
+          predikat: '-',
+          is_complete: false
+        };
+      }
+    });
+
+    const isStudentAllComplete = (activeMapels.length > 0 && completedCount === activeMapels.length);
+    const avgScore = completedCount > 0 ? Math.round((sumScore / completedCount) * 100) / 100 : null;
+
+    return {
+      siswa_id: s.id,
+      no_absen: Number(s.no_absen) || 0,
+      nisn: s.nisn || '-',
+      nis: s.nis || '-',
+      nama: s.nama,
+      jenis_kelamin: s.jenis_kelamin,
+      mapel_scores: mapelScores,
+      completedMapelCount: completedCount,
+      totalMapelCount: activeMapels.length,
+      isStudentComplete: isStudentAllComplete,
+      sumScore: sumScore,
+      avgScore: avgScore,
+      rank: null
+    };
+  });
+
+  // Apakah kelas 100% lengkap seluruh siswa dan mapel?
+  const isClassAllComplete = (activeSiswa.length > 0 && activeMapels.length > 0 && studentStats.every(st => st.isStudentComplete));
+  const rankingStatus = isClassAllComplete ? 'Final' : 'Sementara';
+
+  // Urutkan siswa untuk Standard Competition Ranking (1, 2, 2, 4)
+  // Siswa yang belum lengkap nilainya TIDAK layak diranking numerik (diberi rank '-')
+  const completeStudents = studentStats.filter(st => st.isStudentComplete && st.avgScore !== null);
+  const incompleteStudents = studentStats.filter(st => !st.isStudentComplete || st.avgScore === null);
+
+  completeStudents.sort((a, b) => {
+    if (b.avgScore !== a.avgScore) return b.avgScore - a.avgScore;
+    return a.no_absen - b.no_absen;
+  });
+
+  incompleteStudents.sort((a, b) => a.no_absen - b.no_absen);
+
+  for (let i = 0; i < completeStudents.length; i++) {
+    const cur = completeStudents[i];
+    if (i === 0) {
+      cur.rank = 1;
+    } else {
+      const prev = completeStudents[i - 1];
+      if (prev.avgScore === cur.avgScore) {
+        cur.rank = prev.rank; // Tied rank
+      } else {
+        cur.rank = i + 1; // Competition rank skip
+      }
+    }
+  }
+
+  for (let j = 0; j < incompleteStudents.length; j++) {
+    incompleteStudents[j].rank = '-';
+  }
+
+  const allRanked = [...completeStudents, ...incompleteStudents];
+
+  return {
+    rankedStudents: allRanked,
+    isClassAllComplete: isClassAllComplete,
+    rankingStatus: rankingStatus,
+    totalSiswa: activeSiswa.length,
+    activeMapels: activeMapels,
+    predikatRanges: predikatRanges
+  };
+}
+
+/**
+ * Mengambil rekapitulasi rapor digital seluruh siswa pada satu kelas penugasan.
+ * Otorisasi: kepala_sekolah atau wali_kelas.
+ * IDOR Guard: Wali kelas hanya boleh memuat rapor rombel yang diampunya.
+ *
+ * @param {string} sessionToken
+ * @param {string} [requestedWaliKelasId]
+ * @param {string} [sortBy] - 'no_absen', 'ranking', 'nama', 'nilai_agregat'
+ * @param {string} [sortOrder] - 'asc', 'desc'
+ * @return {{ success: boolean, data: Object|null, message: string }}
+ */
+function apiGetRaporDigitalKelas(sessionToken, requestedWaliKelasId, sortBy, sortOrder) {
+  try {
+    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    const { assignment, activeYear } = resolveWaliKelasScope(user, requestedWaliKelasId);
+
+    if (!assignment) {
+      return buildResponse(false, null, 'Data penugasan kelas tidak ditemukan.');
+    }
+
+    const sData = getSheetDataBatch('siswa');
+    const mData = getSheetDataBatch('mata_pelajaran');
+    const uData = getSheetDataBatch('user');
+    const wkData = getSheetDataBatch('wali_kelas');
+    const taData = getSheetDataBatch('tahun_ajaran');
+    const pengData = getSheetDataBatch('pengaturan');
+
+    let nData = { rows: [] };
+    let skData = { rows: [] };
+    let rkData = { rows: [] };
+    let prData = { rows: [] };
+    try { nData = getSheetDataBatch('nilai_mata_pelajaran'); } catch (e) {}
+    try { skData = getSheetDataBatch('nilai_sikap'); } catch (e) {}
+    try { rkData = getSheetDataBatch('rekap_kehadiran'); } catch (e) {}
+    try { prData = getSheetDataBatch('pengaturan_rapor'); } catch (e) {}
+
+    // Profil Sekolah
+    const schoolRow = pengData.rows[0] || {};
+    const schoolProfile = {
+      namaSekolah: schoolRow.nama_sekolah || '',
+      namaKepalaSekolah: schoolRow.nama_kepala_sekolah || '',
+      nipKepalaSekolah: schoolRow.nip_kepala_sekolah || '',
+      logoSekolah: schoolRow.logo_sekolah || ''
+    };
+
+    // Identitas Guru Wali Kelas
+    const teacher = uData.rows.find(u => u.id === assignment.user_id);
+    const teacherInfo = {
+      nama: teacher ? teacher.nama : '-',
+      nip: teacher ? (teacher.nip || '-') : '-'
+    };
+
+    // Hitung ranking kompetisi
+    const rankingRes = calculateClassRanking(assignment.id, { sData, mData, nData, prData, wkData });
+    const rankedStudents = rankingRes.rankedStudents;
+
+    let readyCount = 0;
+    let notReadyCount = 0;
+
+    // Pasangkan nilai sikap, kehadiran, dan kesiapan rapor per siswa
+    const studentsWithRapor = rankedStudents.map(st => {
+      const sikapRow = skData.rows.find(sk => sk.siswa_id === st.siswa_id);
+      const sikapPredikat = sikapRow && sikapRow.predikat ? String(sikapRow.predikat).trim() : '';
+      const sikapDeskripsi = sikapRow && sikapRow.deskripsi ? String(sikapRow.deskripsi).trim() : '';
+      const hasSikap = sikapPredikat !== '';
+
+      const attRow = rkData.rows.find(rk => rk.siswa_id === st.siswa_id);
+      const jHadir = attRow && attRow.jumlah_hadir !== '' && attRow.jumlah_hadir !== null ? Number(attRow.jumlah_hadir) : '';
+      const jSakit = attRow && attRow.jumlah_sakit !== '' && attRow.jumlah_sakit !== null ? Number(attRow.jumlah_sakit) : '';
+      const jIzin = attRow && attRow.jumlah_izin !== '' && attRow.jumlah_izin !== null ? Number(attRow.jumlah_izin) : '';
+      const jAlpha = attRow && attRow.jumlah_alpha !== '' && attRow.jumlah_alpha !== null ? Number(attRow.jumlah_alpha) : '';
+      const hasKehadiran = (jHadir !== '' || jSakit !== '' || jIzin !== '' || jAlpha !== '');
+
+      const isRaporSiap = st.isStudentComplete && hasSikap && hasKehadiran;
+      if (isRaporSiap) {
+        readyCount++;
+      } else {
+        notReadyCount++;
+      }
+
+      return {
+        id: st.siswa_id,
+        siswa_id: st.siswa_id,
+        no_absen: st.no_absen,
+        nisn: st.nisn,
+        nis: st.nis,
+        nama: st.nama,
+        jenis_kelamin: st.jenis_kelamin,
+        grades: st.mapel_scores,
+        mapel_scores: st.mapel_scores,
+        completedMapelCount: st.completedMapelCount,
+        totalMapelCount: st.totalMapelCount,
+        isStudentComplete: st.isStudentComplete,
+        sumScore: st.sumScore,
+        avgScore: st.avgScore,
+        rank: st.rank,
+        ranking_label: rankingRes.rankingStatus,
+        sikap: {
+          predikat: sikapPredikat || '-',
+          deskripsi: sikapDeskripsi,
+          isComplete: hasSikap
+        },
+        sikapSummary: {
+          predikat: sikapPredikat || '-',
+          deskripsi: sikapDeskripsi,
+          isComplete: hasSikap
+        },
+        kehadiran: {
+          hadir: jHadir !== '' ? jHadir : '-',
+          sakit: jSakit !== '' ? jSakit : '-',
+          izin: jIzin !== '' ? jIzin : '-',
+          alpha: jAlpha !== '' ? jAlpha : '-',
+          keterangan: attRow ? (attRow.keterangan || '') : '',
+          isComplete: hasKehadiran
+        },
+        kehadiranSummary: {
+          hadir: jHadir !== '' ? jHadir : '-',
+          sakit: jSakit !== '' ? jSakit : '-',
+          izin: jIzin !== '' ? jIzin : '-',
+          alpha: jAlpha !== '' ? jAlpha : '-',
+          keterangan: attRow ? (attRow.keterangan || '') : '',
+          isComplete: hasKehadiran
+        },
+        isRaporSiap: isRaporSiap
+      };
+    });
+
+    // Urutkan siswa sesuai permintaan
+    const cleanSortBy = sortBy || 'no_absen';
+    const cleanOrder = sortOrder === 'desc' ? -1 : 1;
+
+    studentsWithRapor.sort((a, b) => {
+      if (cleanSortBy === 'ranking') {
+        if (a.rank !== '-' && b.rank !== '-') {
+          return (Number(a.rank) - Number(b.rank)) * cleanOrder;
+        }
+        if (a.rank !== '-' && b.rank === '-') return -1;
+        if (a.rank === '-' && b.rank !== '-') return 1;
+        return a.no_absen - b.no_absen;
+      }
+      if (cleanSortBy === 'nilai_agregat') {
+        if (a.avgScore !== null && b.avgScore !== null) {
+          return (a.avgScore - b.avgScore) * cleanOrder;
+        }
+        if (a.avgScore !== null && b.avgScore === null) return -1;
+        if (a.avgScore === null && b.avgScore !== null) return 1;
+        return a.no_absen - b.no_absen;
+      }
+      if (cleanSortBy === 'nama') {
+        return a.nama.localeCompare(b.nama) * cleanOrder;
+      }
+      // Default: no_absen
+      return (a.no_absen - b.no_absen) * cleanOrder;
+    });
+
+    // Opsi penugasan kelas yang tersedia bagi Kepala Sekolah
+    let availableAssignments = [];
+    if (user.role === 'kepala_sekolah') {
+      const activeTa = activeYear ? activeYear.id : (assignment ? assignment.tahun_ajaran_id : null);
+      availableAssignments = wkData.rows
+        .filter(w => !activeTa || w.tahun_ajaran_id === activeTa)
+        .map(w => {
+          const t = uData.rows.find(u => u.id === w.user_id);
+          return {
+            id: w.id,
+            penugasanId: w.id,
+            kelas: String(w.kelas),
+            guruNama: t ? t.nama : '-',
+            waliKelasNama: t ? t.nama : '-',
+            isActive: (w.is_active === true || String(w.is_active).toLowerCase() === 'true')
+          };
+        })
+        .sort((a, b) => Number(a.kelas) - Number(b.kelas));
+    }
+
+    const isLocked = activeYear ? (activeYear.is_locked === true || String(activeYear.is_locked).toLowerCase() === 'true') : false;
+
+    const assignmentPayload = {
+      id: assignment.id,
+      kelas: String(assignment.kelas),
+      tahunAjaran: activeYear ? activeYear.tahun_ajaran : '-',
+      semester: activeYear ? activeYear.semester : '-',
+      isLocked: isLocked,
+      waliKelasNama: teacherInfo.nama,
+      waliKelasNip: teacherInfo.nip
+    };
+
+    return buildResponse(true, {
+      schoolProfile: schoolProfile,
+      pengaturan: schoolProfile,
+      assignment: assignmentPayload,
+      waliKelas: assignmentPayload,
+      tahunAjaran: {
+        tahun_ajaran: activeYear ? activeYear.tahun_ajaran : '-',
+        semester: activeYear ? activeYear.semester : '-'
+      },
+      mapelList: rankingRes.activeMapels.map(m => ({ id: m.id, kode: m.kode_mata_pelajaran, nama: m.mata_pelajaran })),
+      predikatRanges: rankingRes.predikatRanges,
+      students: studentsWithRapor,
+      summary: {
+        totalSiswa: rankingRes.totalSiswa,
+        raporSiapCount: readyCount,
+        raporBelumSiapCount: notReadyCount,
+        isClassAllComplete: rankingRes.isClassAllComplete,
+        rankingStatus: rankingRes.rankingStatus
+      },
+      raporSiapCount: readyCount,
+      raporBelumSiapCount: notReadyCount,
+      rankingStatus: rankingRes.rankingStatus,
+      availableAssignments: availableAssignments,
+      availableClasses: availableAssignments,
+      isReadOnly: isLocked
+    }, 'Data rapor digital kelas berhasil dimuat.');
+  } catch (err) {
+    return buildResponse(false, null, err.message || 'Gagal memuat rapor digital kelas.');
+  }
+}
+
+/**
+ * Mengambil dokumen rapor digital individual siswa untuk tampilan pratinjau dan cetak A4/F4.
+ * Otorisasi: kepala_sekolah atau wali_kelas.
+ * IDOR Guard: Wali kelas hanya boleh memuat rapor siswa di kelas binaannya.
+ *
+ * @param {string} sessionToken
+ * @param {string} siswaId
+ * @return {{ success: boolean, data: Object|null, message: string }}
+ */
+function apiGetRaporDigitalSiswa(sessionToken, siswaId) {
+  try {
+    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+
+    if (!siswaId || typeof siswaId !== 'string') {
+      return buildResponse(false, null, 'ID siswa wajib disertakan.');
+    }
+
+    const cleanSiswaId = String(siswaId).trim();
+    const sData = getSheetDataBatch('siswa');
+    // Siswa historis (misal di tahun ajaran lampau) tetap harus bisa diakses rapornya
+    const student = sData.rows.find(s => s.id === cleanSiswaId);
+
+    if (!student) {
+      return buildResponse(false, null, 'Data siswa tidak ditemukan.');
+    }
+
+    const wkData = getSheetDataBatch('wali_kelas');
+    const assignment = wkData.rows.find(w => w.id === student.wali_kelas_id);
+
+    if (!assignment) {
+      return buildResponse(false, null, 'Data penugasan kelas siswa tidak ditemukan.');
+    }
+
+    // Proteksi IDOR: Wali kelas hanya boleh melihat siswa di rombel kelas yang diampunya
+    if (user.role === 'wali_kelas') {
+      if (assignment.user_id !== user.id) {
+        return buildResponse(false, null, 'Akses ditolak: Siswa ini bukan anggota rombel kelas yang Anda ampu.');
+      }
+    }
+
+    const taData = getSheetDataBatch('tahun_ajaran');
+    const activeYear = taData.rows.find(t => t.id === assignment.tahun_ajaran_id);
+
+    const mData = getSheetDataBatch('mata_pelajaran');
+    const uData = getSheetDataBatch('user');
+    const pengData = getSheetDataBatch('pengaturan');
+
+    let nData = { rows: [] };
+    let skData = { rows: [] };
+    let rkData = { rows: [] };
+    let prData = { rows: [] };
+    try { nData = getSheetDataBatch('nilai_mata_pelajaran'); } catch (e) {}
+    try { skData = getSheetDataBatch('nilai_sikap'); } catch (e) {}
+    try { rkData = getSheetDataBatch('rekap_kehadiran'); } catch (e) {}
+    try { prData = getSheetDataBatch('pengaturan_rapor'); } catch (e) {}
+
+    // Profil Sekolah
+    const schoolRow = pengData.rows[0] || {};
+    const schoolProfile = {
+      namaSekolah: schoolRow.nama_sekolah || '',
+      namaKepalaSekolah: schoolRow.nama_kepala_sekolah || '',
+      nipKepalaSekolah: schoolRow.nip_kepala_sekolah || '',
+      logoSekolah: schoolRow.logo_sekolah || ''
+    };
+
+    // Identitas Guru Wali Kelas
+    const teacher = uData.rows.find(u => u.id === assignment.user_id);
+    const teacherInfo = {
+      nama: teacher ? teacher.nama : '-',
+      nip: teacher ? (teacher.nip || '-') : '-'
+    };
+
+    // Hitung ranking kompetisi kelas
+    const rankingRes = calculateClassRanking(assignment.id, { sData, mData, nData, prData, wkData });
+    const thisStudentRank = rankingRes.rankedStudents.find(st => st.siswa_id === student.id);
+
+    // Rincian Mata Pelajaran
+    const activeMapels = rankingRes.activeMapels;
+    let completedCount = 0;
+    let sumScore = 0;
+
+    const subjects = activeMapels.map((m, idx) => {
+      const grade = nData.rows.find(n => n.siswa_id === student.id && n.mata_pelajaran_id === m.id);
+      const isComplete = grade ? (grade.is_complete === true || String(grade.is_complete).toLowerCase() === 'true') : false;
+
+      const t1 = grade && grade.nilai_tugas_1 !== '' && grade.nilai_tugas_1 !== null ? Number(grade.nilai_tugas_1) : '';
+      const t2 = grade && grade.nilai_tugas_2 !== '' && grade.nilai_tugas_2 !== null ? Number(grade.nilai_tugas_2) : '';
+      const t3 = grade && grade.nilai_tugas_3 !== '' && grade.nilai_tugas_3 !== null ? Number(grade.nilai_tugas_3) : '';
+      const t4 = grade && grade.nilai_tugas_4 !== '' && grade.nilai_tugas_4 !== null ? Number(grade.nilai_tugas_4) : '';
+      const uts = grade && grade.nilai_uts !== '' && grade.nilai_uts !== null ? Number(grade.nilai_uts) : '';
+      const uas = grade && grade.nilai_uas !== '' && grade.nilai_uas !== null ? Number(grade.nilai_uas) : '';
+
+      let rataTugas = '';
+      if (t1 !== '' && t2 !== '' && t3 !== '' && t4 !== '') {
+        rataTugas = Math.round(((t1 + t2 + t3 + t4) / 4) * 100) / 100;
+      }
+
+      let finalScore = '';
+      let predikat = '-';
+      let deskripsi = '';
+
+      if (isComplete && grade.nilai_akhir !== '' && grade.nilai_akhir !== null && !isNaN(grade.nilai_akhir)) {
+        finalScore = Number(grade.nilai_akhir);
+        predikat = resolvePredikatScore(finalScore, rankingRes.predikatRanges);
+        completedCount++;
+        sumScore += finalScore;
+
+        if (predikat === 'A') deskripsi = 'Sangat baik dalam menguasai seluruh kompetensi materi pembelajaran.';
+        else if (predikat === 'B') deskripsi = 'Baik dalam memahami materi pembelajaran, mampu mengaplikasikan dengan benar.';
+        else if (predikat === 'C') deskripsi = 'Cukup dalam penguasaan materi pembelajaran, perlu peningkatan ketelitian.';
+        else if (predikat === 'D') deskripsi = 'Perlu bimbingan dan pendampingan lebih lanjut dalam kompetensi materi.';
+      }
+
+      return {
+        no: idx + 1,
+        id: m.id,
+        kode: m.kode_mata_pelajaran,
+        nama: m.mata_pelajaran,
+        mata_pelajaran_nama: m.mata_pelajaran,
+        nilai_tugas_1: t1,
+        nilai_tugas_2: t2,
+        nilai_tugas_3: t3,
+        nilai_tugas_4: t4,
+        rata_tugas: rataTugas,
+        nilai_uts: uts,
+        nilai_uas: uas,
+        nilai_akhir: finalScore,
+        predikat: predikat,
+        deskripsi: deskripsi,
+        is_complete: isComplete
+      };
+    });
+
+    const isAcademicComplete = (activeMapels.length > 0 && completedCount === activeMapels.length);
+    const avgScore = completedCount > 0 ? Math.round((sumScore / completedCount) * 100) / 100 : null;
+
+    // Nilai Sikap
+    const sikapRow = skData.rows.find(sk => sk.siswa_id === student.id);
+    const sikapPredikat = sikapRow && sikapRow.predikat ? String(sikapRow.predikat).trim() : '';
+    const sikapDeskripsi = sikapRow && sikapRow.deskripsi ? String(sikapRow.deskripsi).trim() : '';
+    const hasSikap = sikapPredikat !== '';
+
+    // Rekap Kehadiran
+    const attRow = rkData.rows.find(rk => rk.siswa_id === student.id);
+    const jHadir = attRow && attRow.jumlah_hadir !== '' && attRow.jumlah_hadir !== null ? Number(attRow.jumlah_hadir) : '';
+    const jSakit = attRow && attRow.jumlah_sakit !== '' && attRow.jumlah_sakit !== null ? Number(attRow.jumlah_sakit) : '';
+    const jIzin = attRow && attRow.jumlah_izin !== '' && attRow.jumlah_izin !== null ? Number(attRow.jumlah_izin) : '';
+    const jAlpha = attRow && attRow.jumlah_alpha !== '' && attRow.jumlah_alpha !== null ? Number(attRow.jumlah_alpha) : '';
+    const hasKehadiran = (jHadir !== '' || jSakit !== '' || jIzin !== '' || jAlpha !== '');
+
+    const isReady = isAcademicComplete && hasSikap && hasKehadiran;
+
+    const studentInfo = {
+      id: student.id,
+      nama: student.nama,
+      nisn: student.nisn || '-',
+      nis: student.nis || '-',
+      no_absen: Number(student.no_absen) || 0,
+      jenis_kelamin: student.jenis_kelamin,
+      tempat_lahir: student.tempat_lahir || '-',
+      tanggal_lahir: student.tanggal_lahir || '-',
+      wali_murid: student.wali_murid || '-',
+      nomor_telepon: student.nomor_telepon || '-'
+    };
+
+    const assignmentInfo = {
+      id: assignment.id,
+      kelas: String(assignment.kelas),
+      tahunAjaran: activeYear ? activeYear.tahun_ajaran : '-',
+      semester: activeYear ? activeYear.semester : '-',
+      tanggal_selesai: activeYear ? (activeYear.tanggal_selesai || '') : '',
+      waliKelasNama: teacherInfo.nama,
+      waliKelasNip: teacherInfo.nip,
+      guruNama: teacherInfo.nama,
+      guruNip: teacherInfo.nip,
+      kepalaSekolahNama: schoolProfile.namaKepalaSekolah,
+      kepalaSekolahNip: schoolProfile.nipKepalaSekolah
+    };
+
+    const academicSummary = {
+      totalNilai: sumScore,
+      rataNilai: avgScore !== null ? avgScore : '-',
+      totalMapel: activeMapels.length,
+      mapelLengkapCount: completedCount,
+      isAcademicComplete: isAcademicComplete,
+      rank: thisStudentRank ? thisStudentRank.rank : '-',
+      totalSiswaKelas: rankingRes.totalSiswa,
+      rankingStatus: rankingRes.rankingStatus,
+      avgScore: avgScore !== null ? avgScore : '-',
+      totalSiswa: rankingRes.totalSiswa
+    };
+
+    return buildResponse(true, {
+      schoolProfile: schoolProfile,
+      pengaturan: schoolProfile,
+      student: studentInfo,
+      siswa: studentInfo,
+      assignment: assignmentInfo,
+      waliKelas: assignmentInfo,
+      tahunAjaran: activeYear ? {
+        id: activeYear.id,
+        tahun_ajaran: activeYear.tahun_ajaran,
+        semester: activeYear.semester,
+        tanggal_selesai: activeYear.tanggal_selesai || ''
+      } : {
+        tahun_ajaran: '-',
+        semester: '-'
+      },
+      academic: {
+        subjects: subjects,
+        summary: academicSummary
+      },
+      grades: subjects,
+      ranking: academicSummary,
+      sikap: {
+        predikat: sikapPredikat || '-',
+        deskripsi: sikapDeskripsi,
+        isComplete: hasSikap
+      },
+      kehadiran: {
+        hadir: jHadir !== '' ? jHadir : 0,
+        sakit: jSakit !== '' ? jSakit : 0,
+        izin: jIzin !== '' ? jIzin : 0,
+        alpha: jAlpha !== '' ? jAlpha : 0,
+        keterangan: attRow ? (attRow.keterangan || '') : '',
+        isComplete: hasKehadiran
+      },
+      isReady: isReady,
+      statusRapor: {
+        isReady: isReady,
+        statusLabel: isReady ? 'Siap Diterbitkan' : 'Belum Lengkap'
+      }
+    }, 'Rapor digital siswa berhasil dimuat.');
+  } catch (err) {
+    return buildResponse(false, null, err.message || 'Gagal memuat rapor digital siswa.');
+  }
+}
+
+// ============================================================================
+// 8. ENTRYPOINT APLIKASI WEB (doGet)
 // ============================================================================
 
 /**
@@ -3749,6 +4527,9 @@ if (typeof module !== 'undefined' && module.exports) {
     apiGetRekapKehadiranList,
     apiSaveRekapKehadiranBatch,
     apiGetKelengkapanPenilaian,
+    calculateClassRanking,
+    apiGetRaporDigitalKelas,
+    apiGetRaporDigitalSiswa,
     requireAuth,
     doGet
   };

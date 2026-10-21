@@ -24,6 +24,61 @@
       background-color: #cbd5e1;
       border-radius: 4px;
     }
+
+    /* Media Print untuk Rapor & Rekapitulasi (A4/F4) */
+    @media print {
+      body {
+        background-color: #ffffff !important;
+        color: #000000 !important;
+      }
+      #view-login,
+      #view-app-shell > aside,
+      #view-app-shell header,
+      #toast-container,
+      .no-print,
+      button,
+      select,
+      input {
+        display: none !important;
+      }
+      #view-app-shell {
+        display: block !important;
+      }
+      #view-app-shell > main {
+        padding: 0 !important;
+        margin: 0 !important;
+        max-width: 100% !important;
+      }
+      /* Mode Cetak Rapor Individual */
+      body.print-individual #view-app-shell {
+        display: none !important;
+      }
+      body.print-individual #modal-rapor-siswa {
+        position: static !important;
+        display: block !important;
+        background: transparent !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        max-width: 100% !important;
+      }
+      body.print-individual #modal-rapor-siswa > div {
+        max-width: 100% !important;
+        box-shadow: none !important;
+        border: none !important;
+      }
+      body.print-individual #printable-rapor-individual {
+        padding: 0 !important;
+        overflow: visible !important;
+      }
+      .page-break-avoid {
+        page-break-inside: avoid;
+        break-inside: avoid;
+      }
+      @page {
+        size: auto;
+        margin: 12mm 15mm;
+      }
+    }
   </style>
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col font-sans antialiased selection:bg-blue-500 selection:text-white">
@@ -902,6 +957,121 @@
           </div>
         </div>
 
+        <!-- VIEW CONTAINER: RAPOR DIGITAL & REKAP KELAS (Phase 7) -->
+        <div id="view-rapor-digital" class="hidden space-y-6">
+          <!-- Header Bar (no-print) -->
+          <div class="no-print flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
+            <div>
+              <div class="flex items-center gap-2 mb-1">
+                <h2 class="text-lg font-bold text-slate-900">Rapor Digital &amp; Rekapitulasi Nilai</h2>
+                <span id="rapor-class-badge" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">Kelas</span>
+                <span id="rapor-period-badge" class="text-xs text-slate-400 font-medium">Periode</span>
+              </div>
+              <p class="text-xs text-slate-500">Pratinjau rekapitulasi nilai akhir mata pelajaran, ranking kompetisi, nilai sikap, kehadiran, dan cetak rapor resmi.</p>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <!-- Dropdown Kelas (Khusus Kepala Sekolah) -->
+              <div id="rapor-filter-class-wrapper" class="hidden flex items-center gap-1.5">
+                <label for="rapor-filter-class" class="text-xs font-semibold text-slate-500">Pilih Kelas:</label>
+                <select id="rapor-filter-class" onchange="handleRaporFilterClassChange()"
+                  class="py-2 px-3 text-xs font-semibold rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600">
+                </select>
+              </div>
+
+              <!-- Tombol Cetak Rekap Nilai -->
+              <button type="button" onclick="printRaporRekap()"
+                class="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-xs transition-colors flex items-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+                <span>Cetak Rekap Kelas</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Metrik Ringkasan Status Rapor & Ranking (no-print) -->
+          <div class="no-print grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+              <div class="text-[11px] font-semibold text-slate-400 uppercase mb-1">Total Siswa</div>
+              <div id="rapor-stat-total-siswa" class="text-xl font-bold text-slate-900">0</div>
+              <p class="text-[10px] text-slate-400 mt-0.5">Rombel aktif</p>
+            </div>
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+              <div class="text-[11px] font-semibold text-slate-400 uppercase mb-1">Rapor Siap</div>
+              <div id="rapor-stat-siap" class="text-xl font-bold text-emerald-600">0</div>
+              <p class="text-[10px] text-slate-400 mt-0.5">Nilai, sikap &amp; absen lengkap</p>
+            </div>
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+              <div class="text-[11px] font-semibold text-slate-400 uppercase mb-1">Belum Lengkap</div>
+              <div id="rapor-stat-belum" class="text-xl font-bold text-amber-600">0</div>
+              <p class="text-[10px] text-slate-400 mt-0.5">Komponen perlu dilengkapi</p>
+            </div>
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+              <div class="text-[11px] font-semibold text-slate-400 uppercase mb-1">Status Ranking</div>
+              <div id="rapor-stat-ranking" class="text-sm font-bold text-blue-700">Sementara</div>
+              <p class="text-[10px] text-slate-400 mt-0.5">Competition Ranking (1,2,2,4)</p>
+            </div>
+          </div>
+
+          <!-- Kontrol Filter & Sortir Rekap (no-print) -->
+          <div class="no-print bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div class="relative flex-1 max-w-xs">
+              <input type="text" id="rapor-search-input" oninput="handleRaporSearch()" placeholder="Cari nama atau NISN..."
+                class="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600 bg-slate-50 focus:bg-white transition-all">
+              <svg class="w-4 h-4 text-slate-400 absolute left-3 top-2.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            </div>
+            <div class="flex items-center gap-2">
+              <label for="rapor-sort-by" class="text-xs font-semibold text-slate-500 whitespace-nowrap">Urutkan Berdasarkan:</label>
+              <select id="rapor-sort-by" onchange="handleRaporSortChange()"
+                class="py-2 px-3 text-xs font-semibold rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600">
+                <option value="no_absen">Nomor Absen (1 s/d selesai)</option>
+                <option value="ranking">Ranking Kelas (Peringkat Teratas)</option>
+                <option value="nilai_agregat">Nilai Rata-rata (Tertinggi)</option>
+                <option value="nama">Nama Siswa (A - Z)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Printable Wrapper Rekapitulasi Rapor Digital Kelas -->
+          <div id="printable-rapor-rekap" class="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+            <!-- Kop Cetak Rekap (Khusus Print) -->
+            <div class="hidden print:block p-6 text-center border-b border-slate-300">
+              <h2 id="print-school-name" class="text-lg font-bold text-slate-900 uppercase tracking-wide"></h2>
+              <h3 class="text-sm font-bold text-slate-800 mt-1">REKAPITULASI HASIL PENILAIAN DAN RAPOR DIGITAL SISWA</h3>
+              <p id="print-class-period" class="text-xs text-slate-600 mt-0.5">Kelas ... &bull; Tahun Ajaran ...</p>
+            </div>
+
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs border-collapse">
+                <thead id="rapor-table-head" class="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase text-[11px]">
+                  <!-- Kolom dinamis akan diinjeksi via JS -->
+                </thead>
+                <tbody id="rapor-table-body" class="divide-y divide-slate-100 text-slate-700">
+                  <tr>
+                    <td colspan="10" class="py-12 text-center text-slate-400">Memuat data rapor digital...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Tanda Tangan Cetak Rekap (Khusus Print) -->
+            <div class="hidden print:grid grid-cols-2 gap-8 p-8 text-center text-xs mt-6 page-break-avoid">
+              <div>
+                <p>Mengetahui,</p>
+                <p class="font-bold">Kepala Sekolah</p>
+                <div class="h-16"></div>
+                <p id="print-kepsek-name" class="font-bold underline">( ....................................... )</p>
+                <p id="print-kepsek-nip" class="text-[11px] text-slate-600">NIP. .......................................</p>
+              </div>
+              <div>
+                <p id="print-titi-mangsa">Kota, ...</p>
+                <p class="font-bold">Guru Wali Kelas</p>
+                <div class="h-16"></div>
+                <p id="print-wali-name" class="font-bold underline">( ....................................... )</p>
+                <p id="print-wali-nip" class="text-[11px] text-slate-600">NIP. .......................................</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- VIEW CONTAINER: MODUL DALAM PERSIAPAN (Placeholder modular Phase 7-8) -->
         <div id="view-placeholder" class="hidden">
           <div class="bg-white border border-slate-200 rounded-2xl p-8 sm:p-12 text-center shadow-xs">
@@ -1330,6 +1500,42 @@
   </div>
 
   <!-- ==================================================================== -->
+  <!-- MODAL RAPOR DIGITAL INDIVIDUAL SISWA (PRATINJAU & CETAK A4/F4) -->
+  <!-- ==================================================================== -->
+  <div id="modal-rapor-siswa" class="fixed inset-0 z-50 hidden flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
+    <div class="bg-white rounded-2xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150 my-auto">
+      <!-- Modal Header (Non-print) -->
+      <div class="flex items-center justify-between p-4 sm:p-5 border-b border-slate-100 flex-shrink-0 no-print">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          </div>
+          <div>
+            <h3 class="text-sm sm:text-base font-bold text-slate-900">Lembar Rapor Digital Siswa</h3>
+            <p class="text-[11px] text-slate-500" id="modal-rapor-subtitle">Pratinjau resmi sebelum dicetak</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="printRaporIndividual()"
+            class="px-3.5 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+            <span>Cetak Rapor (A4/F4)</span>
+          </button>
+          <button type="button" onclick="closeModalRaporSiswa()"
+            class="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Printable Document Container -->
+      <div id="printable-rapor-individual" class="flex-1 overflow-y-auto p-6 sm:p-8 space-y-6 text-slate-800 bg-white">
+        <!-- Content will be rendered dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================================================================== -->
   <!-- JAVASCRIPT CLIENT-SIDE ARCHITECTURE -->
   <!-- ==================================================================== -->
   <script>
@@ -1356,7 +1562,11 @@
       siswaSikapData: null,
       rekapKehadiranData: null,
       pengaturanRaporData: null,
-      activeSikapKehadiranTab: 'sikap'
+      activeSikapKehadiranTab: 'sikap',
+      raporDigitalData: null,
+      currentRaporWaliKelasId: null,
+      currentRaporSortBy: 'no_absen',
+      currentRaporSortOrder: 'asc'
     };
 
     // Konfigurasi Navigasi dan Metadata Modul Sesuai Role (PRD & Arsitektur)
@@ -1400,7 +1610,7 @@
         {
           id: 'rapor_sekolah',
           title: 'Rapor Seluruh Kelas',
-          phase: 'Phase 7',
+          phase: 'Phase 7 (Aktif)',
           desc: 'Pemantauan rekapitulasi nilai, ranking sekolah, dan cetak rapor.',
           icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>'
         },
@@ -1423,7 +1633,7 @@
         {
           id: 'dashboard',
           title: 'Dashboard Kelas',
-          phase: 'Phase 3 (Aktif)',
+          phase: 'Phase 7 (Aktif)',
           desc: 'Ringkasan data siswa dan kelengkapan nilai kelas yang diampu.',
           icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>'
         },
@@ -1458,7 +1668,7 @@
         {
           id: 'rapor_kelas',
           title: 'Rapor Digital Kelas',
-          phase: 'Phase 7',
+          phase: 'Phase 7 (Aktif)',
           desc: 'Pratinjau, perhitungan ranking ties, dan cetak rapor digital.',
           icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>'
         },
@@ -1701,6 +1911,7 @@
         document.getElementById('view-input-nilai').classList.add('hidden');
         document.getElementById('view-sikap-kehadiran').classList.add('hidden');
         document.getElementById('view-pengaturan-rapor').classList.add('hidden');
+        document.getElementById('view-rapor-digital').classList.add('hidden');
         document.getElementById('view-placeholder').classList.add('hidden');
 
         // Buka tampilan yang relevan
@@ -1734,6 +1945,9 @@
         } else if (routeId === 'pengaturan_rapor') {
           document.getElementById('view-pengaturan-rapor').classList.remove('hidden');
           loadPengaturanRaporView();
+        } else if (routeId === 'rapor_kelas' || routeId === 'rapor_sekolah') {
+          document.getElementById('view-rapor-digital').classList.remove('hidden');
+          loadRaporDigitalView();
         } else {
           document.getElementById('view-placeholder').classList.remove('hidden');
           document.getElementById('placeholder-title').textContent = targetRoute.title;
@@ -1826,6 +2040,8 @@
 
       if (isKepsek) {
         // 2. Metric Cards untuk Kepala Sekolah
+        const kelasSiap = summary.kelasSiapRapor || 0;
+        const totalKelasTarget = 6;
         html += `
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
@@ -1836,7 +2052,7 @@
                 </div>
               </div>
               <div class="text-2xl font-bold text-slate-900">${summary.totalSiswa || 0}</div>
-              <p class="text-[11px] text-slate-400 mt-1">Total siswa aktif di database</p>
+              <p class="text-[11px] text-slate-400 mt-1">Total siswa aktif di sekolah</p>
             </div>
 
             <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
@@ -1857,88 +2073,251 @@
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
                 </div>
               </div>
-              <div class="text-2xl font-bold text-slate-900">${summary.totalKelasDitugaskan || 0} / 6</div>
+              <div class="text-2xl font-bold text-slate-900">${summary.totalKelasDitugaskan || 0} / ${totalKelasTarget}</div>
               <p class="text-[11px] text-slate-400 mt-1">Kelas 1–6 periode aktif</p>
             </div>
 
             <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
               <div class="flex items-center justify-between text-slate-400 mb-2">
-                <span class="text-xs font-semibold text-slate-500 uppercase">Status Sistem</span>
-                <div class="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                <span class="text-xs font-semibold text-slate-500 uppercase">Kesiapan Rapor</span>
+                <div class="w-8 h-8 rounded-lg ${kelasSiap === 6 ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'} flex items-center justify-center">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                 </div>
               </div>
-              <div class="text-xl font-bold text-emerald-600">Siap Operasi</div>
-              <p class="text-[11px] text-slate-400 mt-1">Phase 4 Tervalidasi</p>
+              <div class="text-2xl font-bold ${kelasSiap === 6 ? 'text-emerald-600' : 'text-amber-600'}">${kelasSiap} / ${totalKelasTarget} Kelas</div>
+              <p class="text-[11px] text-slate-400 mt-1">${kelasSiap === 6 ? 'Lengkap seluruhnya' : (summary.kelasBelumSiap > 0 ? summary.kelasBelumSiap + ' kelas berproses' : 'Menunggu pengisian')}</p>
             </div>
           </div>
 
           <!-- 3. Rombel Kelas 1 - Kelas 6 Overview -->
           <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
-            <div class="flex items-center justify-between">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <h3 class="text-sm font-bold text-slate-900 uppercase tracking-wider">Pemetaan Wali Kelas (Kelas 1–6)</h3>
-                <p class="text-xs text-slate-500 mt-0.5">Penetapan guru pengampu per rombel kelas pada periode ${activeYear ? activeYear.tahunAjaran + ' ' + activeYear.semester : 'aktif'}.</p>
+                <h3 class="text-sm font-bold text-slate-900 uppercase tracking-wider">Monitoring Kelas 1–6 &amp; Kesiapan Rapor</h3>
+                <p class="text-xs text-slate-500 mt-0.5">Pemantauan progres kelengkapan nilai, sikap, kehadiran, dan penerbitan rapor per rombel.</p>
               </div>
-              <button type="button" onclick="ViewController.navigateTo('penugasan')"
-                class="px-3.5 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors">
-                Kelola Penugasan &rarr;
-              </button>
+              <div class="flex items-center gap-2">
+                <button type="button" onclick="ViewController.navigateTo('rapor_sekolah')"
+                  class="px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-700 hover:bg-blue-800 rounded-xl transition-colors shadow-xs flex items-center gap-1.5">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                  <span>Rapor Seluruh Kelas &rarr;</span>
+                </button>
+                <button type="button" onclick="ViewController.navigateTo('penugasan')"
+                  class="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors">
+                  Kelola Penugasan
+                </button>
+              </div>
             </div>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              ${kelasOverview.map(k => `
-                <div class="p-4 rounded-xl border ${k.isAssigned ? 'border-slate-200 bg-white hover:border-blue-300' : 'border-dashed border-amber-200 bg-amber-50/40'} transition-all flex items-start justify-between gap-3">
-                  <div class="flex items-start gap-3">
-                    <div class="w-10 h-10 rounded-xl ${k.isAssigned ? 'bg-blue-600 text-white' : 'bg-amber-100 text-amber-700'} font-bold flex items-center justify-center text-sm flex-shrink-0 shadow-xs">
-                      ${k.kelas}
-                    </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              ${kelasOverview.map(k => {
+                let badgeStatusClass = 'bg-slate-100 text-slate-600 border-slate-200';
+                if (k.statusLabel === 'Lengkap') badgeStatusClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                else if (k.statusLabel === 'Sebagian') badgeStatusClass = 'bg-blue-50 text-blue-700 border-blue-200';
+                else if (k.statusLabel === 'Belum Mulai') badgeStatusClass = 'bg-amber-50 text-amber-700 border-amber-200';
+
+                return `
+                  <div class="p-4 rounded-xl border ${k.isAssigned ? 'border-slate-200 bg-white hover:border-blue-300' : 'border-dashed border-amber-200 bg-amber-50/40'} transition-all flex flex-col justify-between gap-3 shadow-xs">
                     <div>
-                      <div class="text-xs font-bold text-slate-900">Kelas ${k.kelas}</div>
+                      <div class="flex items-start justify-between gap-2 mb-2">
+                        <div class="flex items-center gap-2.5">
+                          <div class="w-9 h-9 rounded-xl ${k.isAssigned ? 'bg-blue-600 text-white' : 'bg-amber-100 text-amber-700'} font-bold flex items-center justify-center text-sm flex-shrink-0 shadow-xs">
+                            ${k.kelas}
+                          </div>
+                          <div>
+                            <div class="text-xs font-bold text-slate-900">Kelas ${k.kelas}</div>
+                            <div class="text-[11px] text-slate-500 truncate max-w-[140px]">${k.isAssigned ? k.details.guruNama : 'Belum Ada Wali'}</div>
+                          </div>
+                        </div>
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${badgeStatusClass}">
+                          ${k.statusLabel}
+                        </span>
+                      </div>
+
                       ${k.isAssigned ? `
-                        <div class="text-xs text-blue-700 font-medium truncate max-w-[150px]">${k.details.guruNama}</div>
-                        <div class="text-[10px] text-slate-400">NIP: ${k.details.guruNip} &bull; ${k.details.totalSiswa} Siswa</div>
+                        <div class="space-y-1.5 mt-3 pt-2 border-t border-slate-100 text-[11px]">
+                          <div class="flex items-center justify-between text-slate-600">
+                            <span>Siswa &amp; Mapel:</span>
+                            <span class="font-semibold text-slate-800">${k.details.totalSiswa} Siswa &bull; ${k.mapelCount} Mapel</span>
+                          </div>
+                          <div class="flex items-center justify-between text-slate-600">
+                            <span>Nilai Mapel:</span>
+                            <span class="font-semibold ${k.nilaiPercent === 100 ? 'text-emerald-600' : 'text-slate-800'}">${k.nilaiPercent}%</span>
+                          </div>
+                          <div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                            <div class="bg-blue-600 h-full rounded-full" style="width: ${k.nilaiPercent}%"></div>
+                          </div>
+                          <div class="flex items-center justify-between text-slate-500 text-[10px] pt-0.5">
+                            <span>Sikap: <strong class="text-slate-700">${k.sikapPercent}%</strong></span>
+                            <span>Absen: <strong class="text-slate-700">${k.kehadiranPercent}%</strong></span>
+                          </div>
+                        </div>
                       ` : `
-                        <div class="text-xs text-amber-700 font-medium">Belum Ada Wali Kelas</div>
-                        <div class="text-[10px] text-slate-400">Klik untuk tetapkan</div>
+                        <p class="text-[11px] text-amber-700 mt-2">Wali kelas belum ditetapkan untuk periode akademik ini.</p>
+                      `}
+
+                      ${k.hasWarning ? `
+                        <div class="mt-2 text-[10px] text-amber-800 bg-amber-50 border border-amber-200/80 px-2 py-1 rounded-lg">
+                          ⚠️ ${k.warningMessage}
+                        </div>
+                      ` : ''}
+                    </div>
+
+                    <div class="pt-2 border-t border-slate-100 flex items-center justify-between">
+                      <span class="text-[10px] font-semibold ${k.isRaporReady ? 'text-emerald-600' : 'text-slate-400'}">
+                        ${k.isRaporReady ? '✅ Rapor Siap Cetak' : '⏳ Belum Siap'}
+                      </span>
+                      ${k.isAssigned && k.details && k.details.penugasanId ? `
+                        <button type="button" onclick="openRaporForKelas('${k.details.penugasanId}')" class="px-2.5 py-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors">
+                          Lihat Rapor &rarr;
+                        </button>
+                      ` : `
+                        <button type="button" onclick="openModalTambahPenugasanForKelas('${k.kelas}')" class="px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[10px] font-semibold transition-colors">
+                          + Tugaskan
+                        </button>
                       `}
                     </div>
                   </div>
-                  <div>
-                    ${k.isAssigned ? `
-                      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">Terisi</span>
-                    ` : `
-                      <button type="button" onclick="openModalTambahPenugasanForKelas('${k.kelas}')" class="px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[10px] font-semibold transition-colors">
-                        + Tugaskan
-                      </button>
-                    `}
-                  </div>
-                </div>
-              `).join('')}
+                `;
+              }).join('')}
             </div>
           </div>
         `;
       } else {
         // Wali Kelas Dashboard
         if (summary.hasAssignment) {
+          const isRaporReady = summary.statusRapor === 'Siap Diterbitkan';
+          const topList = summary.topRanking || [];
+
           html += `
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <!-- 2. Metric Cards untuk Wali Kelas -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
-                <div class="text-xs font-semibold text-slate-400 uppercase mb-1">Kelas Yang Diampu</div>
+                <div class="flex items-center justify-between text-slate-400 mb-2">
+                  <span class="text-xs font-semibold text-slate-500 uppercase">Rombel Kelas</span>
+                  <div class="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs">
+                    K${summary.kelas}
+                  </div>
+                </div>
                 <div class="text-2xl font-bold text-blue-700">Kelas ${summary.kelas}</div>
-                <p class="text-[11px] text-slate-500 mt-1">Penugasan Semester Aktif</p>
+                <p class="text-[11px] text-slate-500 mt-1">${summary.totalSiswa || 0} Siswa &bull; ${summary.totalMapel || 0} Mapel Aktif</p>
               </div>
 
               <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
-                <div class="text-xs font-semibold text-slate-400 uppercase mb-1">Jumlah Siswa Kelas</div>
-                <div class="text-2xl font-bold text-slate-900">${summary.totalSiswa || 0} Siswa</div>
-                <p class="text-[11px] text-slate-500 mt-1">Terdaftar dalam rombel kelas Anda</p>
-              </div>
-
-              <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
-                <div class="text-xs font-semibold text-slate-400 uppercase mb-1">Kelengkapan Nilai</div>
+                <div class="flex items-center justify-between text-slate-400 mb-2">
+                  <span class="text-xs font-semibold text-slate-500 uppercase">Kelengkapan Nilai</span>
+                  <div class="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-xs">
+                    %
+                  </div>
+                </div>
                 <div class="text-2xl font-bold text-emerald-600">${summary.kelengkapanNilaiPersen || 0}%</div>
-                <p class="text-[11px] text-slate-500 mt-1">Komponen nilai Tugas, UTS, dan UAS</p>
+                <p class="text-[11px] text-slate-500 mt-1">Komponen Tugas, UTS &amp; UAS</p>
+              </div>
+
+              <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+                <div class="flex items-center justify-between text-slate-400 mb-2">
+                  <span class="text-xs font-semibold text-slate-500 uppercase">Sikap &amp; Kehadiran</span>
+                  <div class="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center font-bold text-xs">
+                    S/A
+                  </div>
+                </div>
+                <div class="text-lg font-bold text-slate-900 mt-1">
+                  Sikap <span class="text-purple-600">${summary.kelengkapanSikapPersen || 0}%</span>
+                </div>
+                <p class="text-[11px] text-slate-500 mt-1">Kehadiran: <strong>${summary.kelengkapanKehadiranPersen || 0}%</strong> lengkap</p>
+              </div>
+
+              <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+                <div class="flex items-center justify-between text-slate-400 mb-2">
+                  <span class="text-xs font-semibold text-slate-500 uppercase">Kesiapan Rapor</span>
+                  <div class="w-8 h-8 rounded-lg ${isRaporReady ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'} flex items-center justify-center">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                  </div>
+                </div>
+                <div class="text-lg font-bold ${isRaporReady ? 'text-emerald-600' : 'text-amber-600'} mt-1">${summary.statusRapor || 'Belum Lengkap'}</div>
+                <p class="text-[11px] text-slate-500 mt-1">${isRaporReady ? 'Rapor siap diterbitkan &amp; dicetak' : 'Lengkapi nilai, sikap &amp; absen'}</p>
+              </div>
+            </div>
+
+            <!-- 3. Dua Panel: Top 3 Ranking & Aksi Cepat Wali Kelas -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <!-- Widget Top 3 Ranking Siswa (Competition Ranking) -->
+              <div class="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <div class="flex items-center gap-2">
+                      <h3 class="text-sm font-bold text-slate-900 uppercase tracking-wider">Top 3 Ranking Siswa (Kelas ${summary.kelas})</h3>
+                      <span class="px-2 py-0.5 rounded-full text-[10px] font-bold border ${summary.rankingStatus === 'Final' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}">
+                        ${summary.rankingStatus === 'Final' ? 'Final (100% Lengkap)' : 'Sementara'}
+                      </span>
+                    </div>
+                    <p class="text-xs text-slate-500 mt-0.5">Dihitung otomatis dengan Standard Competition Ranking (1, 2, 2, 4) berdasarkan rata-rata nilai akhir.</p>
+                  </div>
+                  <button type="button" onclick="ViewController.navigateTo('rapor_kelas')"
+                    class="px-3.5 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors">
+                    Lihat Rekap Rapor &rarr;
+                  </button>
+                </div>
+
+                ${topList.length === 0 ? `
+                  <div class="py-8 text-center text-slate-400 text-xs">
+                    Belum ada nilai akhir yang dihitung untuk menentukan ranking kelas.
+                  </div>
+                ` : `
+                  <div class="divide-y divide-slate-100 border border-slate-100 rounded-xl overflow-hidden">
+                    ${topList.map(item => `
+                      <div class="p-3.5 flex items-center justify-between gap-3 hover:bg-slate-50/60 transition-colors">
+                        <div class="flex items-center gap-3">
+                          <div class="w-8 h-8 rounded-full ${item.rank === 1 ? 'bg-amber-100 text-amber-800' : (item.rank === 2 ? 'bg-slate-200 text-slate-700' : 'bg-amber-50 text-amber-900')} font-extrabold flex items-center justify-center text-xs flex-shrink-0">
+                            #${item.rank}
+                          </div>
+                          <div>
+                            <div class="text-xs font-bold text-slate-900">${item.nama}</div>
+                            <div class="text-[10px] text-slate-400">No. Absen: ${item.no_absen || '-'} &bull; Status: ${item.isComplete ? 'Nilai Lengkap' : 'Nilai Parsial'}</div>
+                          </div>
+                        </div>
+                        <div class="text-right">
+                          <div class="text-xs font-bold text-blue-700">${item.rataNilai !== '-' ? item.rataNilai : '-'}</div>
+                          <div class="text-[10px] text-slate-400">Rata-rata</div>
+                        </div>
+                      </div>
+                    `).join('')}
+                  </div>
+                `}
+              </div>
+
+              <!-- Quick Action & Panduan Wali Kelas -->
+              <div class="bg-gradient-to-br from-slate-900 to-indigo-950 text-white rounded-2xl p-6 shadow-xs flex flex-col justify-between">
+                <div>
+                  <div class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white/10 rounded-full text-[10px] font-semibold text-indigo-200 mb-3 border border-white/10">
+                    <span>Menu Cepat Wali Kelas</span>
+                  </div>
+                  <h4 class="text-sm font-bold text-white mb-2">Alur Kelengkapan Rapor Digital</h4>
+                  <ul class="text-xs text-indigo-100/90 space-y-2 mb-4">
+                    <li class="flex items-center gap-2">
+                      <span class="w-4 h-4 rounded-full bg-blue-500/30 text-blue-200 flex items-center justify-center text-[10px] font-bold">1</span>
+                      <span>Isi Nilai Tugas, UTS, UAS di <strong>Input Nilai</strong></span>
+                    </li>
+                    <li class="flex items-center gap-2">
+                      <span class="w-4 h-4 rounded-full bg-blue-500/30 text-blue-200 flex items-center justify-center text-[10px] font-bold">2</span>
+                      <span>Rekap Karakter &amp; Kehadiran di <strong>Sikap &amp; Kehadiran</strong></span>
+                    </li>
+                    <li class="flex items-center gap-2">
+                      <span class="w-4 h-4 rounded-full bg-blue-500/30 text-blue-200 flex items-center justify-center text-[10px] font-bold">3</span>
+                      <span>Periksa Ranking dan Cetak Rapor di <strong>Rapor Digital</strong></span>
+                    </li>
+                  </ul>
+                </div>
+                <div class="pt-3 border-t border-white/10 flex items-center gap-2">
+                  <button type="button" onclick="ViewController.navigateTo('input_nilai')"
+                    class="flex-1 py-2 px-3 text-center text-xs font-semibold text-slate-900 bg-white hover:bg-slate-100 rounded-xl transition-colors">
+                    Input Nilai
+                  </button>
+                  <button type="button" onclick="ViewController.navigateTo('rapor_kelas')"
+                    class="flex-1 py-2 px-3 text-center text-xs font-semibold text-white bg-blue-600 hover:bg-blue-500 rounded-xl transition-colors">
+                    Rapor Kelas
+                  </button>
+                </div>
               </div>
             </div>
           `;
@@ -4010,6 +4389,503 @@
         saveBtn.disabled = false;
         spinner.classList.add('hidden');
       }
+    }
+
+    // ====================================================================
+    // LOGIKA MODUL 7: RAPOR DIGITAL, RANKING SISWA & CETAK (Phase 7)
+    // ====================================================================
+
+    function openRaporForKelas(penugasanId) {
+      APP_STATE.currentRaporWaliKelasId = penugasanId;
+      ViewController.navigateTo('rapor_sekolah');
+    }
+
+    async function loadRaporDigitalView(requestedWkId, sortBy, sortOrder) {
+      const tbody = document.getElementById('rapor-table-body');
+      tbody.innerHTML = '<tr><td colspan="12" class="py-12 text-center text-slate-400">Memuat rekapitulasi nilai dan rapor digital...</td></tr>';
+
+      if (sortBy) APP_STATE.currentRaporSortBy = sortBy;
+      if (sortOrder) APP_STATE.currentRaporSortOrder = sortOrder;
+      if (requestedWkId) APP_STATE.currentRaporWaliKelasId = requestedWkId;
+
+      const currentSort = APP_STATE.currentRaporSortBy || 'no_absen';
+      const currentOrder = APP_STATE.currentRaporSortOrder || 'asc';
+      const wkId = APP_STATE.currentRaporWaliKelasId || null;
+
+      try {
+        const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+        const res = await callBackend('apiGetRaporDigitalKelas', token, wkId, currentSort, currentOrder);
+
+        if (res && res.success && res.data) {
+          const data = res.data;
+          APP_STATE.raporDigitalData = data;
+          APP_STATE.currentRaporWaliKelasId = data.waliKelas ? data.waliKelas.id : null;
+
+          // Perbarui Badges Header
+          const classBadge = document.getElementById('rapor-class-badge');
+          const periodBadge = document.getElementById('rapor-period-badge');
+          if (data.waliKelas) {
+            classBadge.textContent = 'Kelas ' + data.waliKelas.kelas;
+            classBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800';
+          }
+          if (data.tahunAjaran) {
+            periodBadge.textContent = data.tahunAjaran.tahun_ajaran + ' ' + data.tahunAjaran.semester;
+          }
+
+          // Perbarui Stat Cards
+          document.getElementById('rapor-stat-total-siswa').textContent = data.students ? data.students.length : 0;
+          document.getElementById('rapor-stat-siap').textContent = data.raporSiapCount || 0;
+          document.getElementById('rapor-stat-belum').textContent = data.raporBelumSiapCount || 0;
+
+          const rankingEl = document.getElementById('rapor-stat-ranking');
+          if (data.rankingStatus === 'Final') {
+            rankingEl.textContent = 'Final (100% Lengkap)';
+            rankingEl.className = 'text-sm font-bold text-emerald-600';
+          } else {
+            rankingEl.textContent = 'Sementara (Data Belum Lengkap)';
+            rankingEl.className = 'text-sm font-bold text-amber-600';
+          }
+
+          // Khusus Kepala Sekolah: Injeksi Dropdown Pilihan Kelas
+          const filterWrapper = document.getElementById('rapor-filter-class-wrapper');
+          const filterSelect = document.getElementById('rapor-filter-class');
+          if (APP_STATE.user && APP_STATE.user.role === 'kepala_sekolah') {
+            filterWrapper.classList.remove('hidden');
+            const classList = data.availableClasses || data.availableAssignments || [];
+            if (Array.isArray(classList) && classList.length > 0) {
+              const currentWkId = (data.waliKelas && data.waliKelas.id) || (data.assignment && data.assignment.id);
+              filterSelect.innerHTML = classList.map(c => {
+                const cId = c.penugasanId || c.id;
+                const cGuru = c.guruNama || c.waliKelasNama || '-';
+                return `
+                  <option value="${cId}" ${cId === currentWkId ? 'selected' : ''}>
+                    Kelas ${c.kelas} - ${cGuru}
+                  </option>
+                `;
+              }).join('');
+            }
+          } else {
+            filterWrapper.classList.add('hidden');
+          }
+
+          // Injeksi Data Kop & Tanda Tangan Cetak Rekap
+          const printSchool = document.getElementById('print-school-name');
+          const printPeriod = document.getElementById('print-class-period');
+          const printKepsekName = document.getElementById('print-kepsek-name');
+          const printKepsekNip = document.getElementById('print-kepsek-nip');
+          const printWaliName = document.getElementById('print-wali-name');
+          const printWaliNip = document.getElementById('print-wali-nip');
+          const printTiti = document.getElementById('print-titi-mangsa');
+
+          const p = data.pengaturan || data.schoolProfile || {};
+          const wk = data.waliKelas || data.assignment || {};
+          const ta = data.tahunAjaran ? (typeof data.tahunAjaran === 'object' ? data.tahunAjaran : { tahun_ajaran: data.tahunAjaran, semester: data.semester }) : {};
+
+          if (printSchool) printSchool.textContent = p.nama_sekolah || p.namaSekolah || '';
+          if (printPeriod) printPeriod.textContent = `Kelas ${wk.kelas || '-'} • Semester ${ta.semester || '-'} • Tahun Ajaran ${ta.tahun_ajaran || '-'}`;
+          if (printKepsekName) {
+            const kn = p.kepala_sekolah_nama || p.namaKepalaSekolah || '';
+            printKepsekName.textContent = kn ? kn : '( ....................................... )';
+          }
+          if (printKepsekNip) {
+            const knip = p.kepala_sekolah_nip || p.nipKepalaSekolah || '';
+            printKepsekNip.textContent = knip ? 'NIP. ' + knip : 'NIP. .......................................';
+          }
+          if (printWaliName) {
+            const wn = wk.guruNama || wk.waliKelasNama || '';
+            printWaliName.textContent = wn ? wn : '( ....................................... )';
+          }
+          if (printWaliNip) {
+            const wnip = wk.guruNip || wk.waliKelasNip || '';
+            printWaliNip.textContent = wnip ? 'NIP. ' + wnip : 'NIP. .......................................';
+          }
+          if (printTiti) {
+            const kota = p.kota || 'Kota';
+            printTiti.textContent = `${kota}, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`;
+          }
+
+          renderRaporDigitalTable(data);
+        } else {
+          tbody.innerHTML = `<tr><td colspan="12" class="py-12 text-center text-red-500 font-medium">${(res && res.message) || 'Gagal memuat rapor digital kelas.'}</td></tr>`;
+        }
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="12" class="py-12 text-center text-red-500 font-medium">Kesalahan koneksi saat memuat rapor digital.</td></tr>`;
+      }
+    }
+
+    function renderRaporDigitalTable(data, filterKeyword = '') {
+      const thead = document.getElementById('rapor-table-head');
+      const tbody = document.getElementById('rapor-table-body');
+      if (!data) return;
+
+      const mapelList = data.mapelList || [];
+      let students = data.students || [];
+
+      // Filter keyword jika ada
+      if (filterKeyword) {
+        const q = filterKeyword.toLowerCase().trim();
+        students = students.filter(s =>
+          (s.nama && s.nama.toLowerCase().includes(q)) ||
+          (s.nisn && s.nisn.toLowerCase().includes(q)) ||
+          (s.nis && s.nis.toLowerCase().includes(q))
+        );
+      }
+
+      // 1. Bangun Header Kolom Dinamis
+      thead.innerHTML = `
+        <tr>
+          <th class="py-3 px-3 text-center w-10">No</th>
+          <th class="py-3 px-3 text-center w-12">Absen</th>
+          <th class="py-3 px-3 w-28">NISN / NIS</th>
+          <th class="py-3 px-4 min-w-[150px]">Nama Siswa</th>
+          ${mapelList.map(m => `
+            <th class="py-3 px-2 text-center whitespace-nowrap" title="${m.nama}">
+              <span class="text-[10px] font-bold">${m.kode || m.nama.slice(0, 4)}</span>
+            </th>
+          `).join('')}
+          <th class="py-3 px-3 text-center bg-blue-50/80 text-blue-900 whitespace-nowrap">Rata-rata</th>
+          <th class="py-3 px-3 text-center bg-indigo-50/80 text-indigo-900 whitespace-nowrap">Ranking</th>
+          <th class="py-3 px-3 text-center whitespace-nowrap">Sikap</th>
+          <th class="py-3 px-3 text-center whitespace-nowrap">Absensi (H/S/I/A)</th>
+          <th class="py-3 px-3 text-center whitespace-nowrap">Status Rapor</th>
+          <th class="py-3 px-3 text-center no-print">Aksi</th>
+        </tr>
+      `;
+
+      // 2. Bangun Body
+      const totalColspan = 9 + mapelList.length;
+      if (students.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="${totalColspan}" class="py-12 text-center text-slate-400 text-xs">
+              ${filterKeyword ? 'Tidak ditemukan siswa yang cocok dengan kata kunci "' + filterKeyword + '".' : 'Belum ada siswa terdaftar pada kelas ini.'}
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = students.map((st, idx) => {
+        const studentId = st.id || st.siswa_id;
+        const att = st.kehadiranSummary || st.kehadiran || {};
+        const hadir = (att.hadir !== undefined && att.hadir !== '') ? att.hadir : 0;
+        const sakit = (att.sakit !== undefined && att.sakit !== '') ? att.sakit : 0;
+        const izin = (att.izin !== undefined && att.izin !== '') ? att.izin : 0;
+        const alpha = (att.alpha !== undefined && att.alpha !== '') ? att.alpha : 0;
+        const kehadiranStr = `H:${hadir} S:${sakit} I:${izin} A:${alpha}`;
+
+        const sikap = st.sikapSummary || st.sikap || {};
+        const sikapStr = (sikap && sikap.predikat) ? sikap.predikat : '-';
+
+        const gradesMap = st.grades || st.mapel_scores || {};
+        const avgScoreVal = (st.avgScore !== undefined && st.avgScore !== null) ? st.avgScore : (st.averageScore !== undefined ? st.averageScore : '-');
+        const rankVal = st.rank !== undefined ? st.rank : '-';
+        const isReadyVal = (st.isRaporSiap !== undefined) ? st.isRaporSiap : st.isStudentComplete;
+
+        return `
+          <tr class="hover:bg-slate-50/70 transition-colors">
+            <td class="py-3 px-3 text-center font-semibold text-slate-400 text-[11px]">${idx + 1}</td>
+            <td class="py-3 px-3 text-center font-bold text-slate-800 text-[11px]">${st.no_absen || '-'}</td>
+            <td class="py-3 px-3 font-mono text-[11px] text-slate-500 whitespace-nowrap">${st.nisn || '-'}${st.nis ? ' / ' + st.nis : ''}</td>
+            <td class="py-3 px-4 font-bold text-slate-900 whitespace-nowrap">
+              <div>${st.nama}</div>
+              <div class="text-[10px] text-slate-400 font-normal sm:hidden">${st.nisn || '-'}</div>
+            </td>
+            ${mapelList.map(m => {
+              const grade = gradesMap[m.id];
+              const score = (grade && grade.nilai_akhir !== null && grade.nilai_akhir !== undefined && grade.nilai_akhir !== '') ? grade.nilai_akhir : '-';
+              return `
+                <td class="py-3 px-2 text-center font-mono text-xs ${score !== '-' ? 'font-bold text-slate-800' : 'text-slate-300'}">
+                  ${score}
+                </td>
+              `;
+            }).join('')}
+            <td class="py-3 px-3 text-center font-mono text-xs font-bold text-blue-700 bg-blue-50/30 whitespace-nowrap">
+              ${avgScoreVal !== null ? avgScoreVal : '-'}
+            </td>
+            <td class="py-3 px-3 text-center whitespace-nowrap bg-indigo-50/30">
+              ${rankVal !== '-' ? `
+                <span class="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-extrabold ${rankVal === 1 ? 'bg-amber-100 text-amber-800' : (rankVal === 2 ? 'bg-slate-200 text-slate-700' : (rankVal === 3 ? 'bg-amber-50 text-amber-900' : 'bg-slate-100 text-slate-600'))}">
+                  ${rankVal}
+                </span>
+              ` : `
+                <span class="text-slate-300 font-bold">-</span>
+              `}
+            </td>
+            <td class="py-3 px-3 text-center text-xs font-semibold ${sikapStr === 'A' ? 'text-emerald-700' : (sikapStr === 'B' ? 'text-blue-700' : 'text-slate-600')}">
+              ${sikapStr}
+            </td>
+            <td class="py-3 px-3 text-center font-mono text-[10px] text-slate-600 whitespace-nowrap">
+              ${kehadiranStr}
+            </td>
+            <td class="py-3 px-3 text-center whitespace-nowrap">
+              ${isReadyVal ? `
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  Siap
+                </span>
+              ` : `
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                  Belum Lengkap
+                </span>
+              `}
+            </td>
+            <td class="py-3 px-3 text-center whitespace-nowrap no-print">
+              <button type="button" onclick="openModalRaporSiswa('${studentId}')"
+                class="px-2.5 py-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors shadow-2xs">
+                Lembar Rapor
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function handleRaporSearch() {
+      const q = document.getElementById('rapor-search-input').value;
+      if (APP_STATE.raporDigitalData) {
+        renderRaporDigitalTable(APP_STATE.raporDigitalData, q);
+      }
+    }
+
+    function handleRaporSortChange() {
+      const select = document.getElementById('rapor-sort-by');
+      const sortBy = select.value;
+      loadRaporDigitalView(APP_STATE.currentRaporWaliKelasId, sortBy, 'asc');
+    }
+
+    function handleRaporFilterClassChange() {
+      const select = document.getElementById('rapor-filter-class');
+      const wkId = select.value;
+      loadRaporDigitalView(wkId);
+    }
+
+    async function openModalRaporSiswa(siswaId) {
+      const modal = document.getElementById('modal-rapor-siswa');
+      const container = document.getElementById('printable-rapor-individual');
+      modal.classList.remove('hidden');
+      container.innerHTML = `
+        <div class="py-20 text-center space-y-3">
+          <div class="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+          <p class="text-xs font-semibold text-slate-500">Menyusun dokumen rapor digital siswa...</p>
+        </div>
+      `;
+
+      try {
+        const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+        const res = await callBackend('apiGetRaporDigitalSiswa', token, siswaId);
+
+        if (res && res.success && res.data) {
+          renderModalRaporSiswaContent(res.data);
+        } else {
+          container.innerHTML = `
+            <div class="py-16 text-center text-red-500 space-y-2">
+              <p class="text-sm font-bold">${(res && res.message) || 'Gagal memuat rapor siswa.'}</p>
+              <button type="button" onclick="closeModalRaporSiswa()" class="px-3.5 py-1.5 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold">Tutup</button>
+            </div>
+          `;
+        }
+      } catch (err) {
+        container.innerHTML = `
+          <div class="py-16 text-center text-red-500 space-y-2">
+            <p class="text-sm font-bold">Terjadi kesalahan koneksi saat memuat rapor siswa.</p>
+            <button type="button" onclick="closeModalRaporSiswa()" class="px-3.5 py-1.5 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold">Tutup</button>
+          </div>
+        `;
+      }
+    }
+
+    function closeModalRaporSiswa() {
+      document.getElementById('modal-rapor-siswa').classList.add('hidden');
+    }
+
+    function renderModalRaporSiswaContent(data) {
+      const container = document.getElementById('printable-rapor-individual');
+      if (!data) return;
+
+      const p = data.pengaturan || data.schoolProfile || {};
+      const st = data.siswa || data.student || {};
+      const ta = data.tahunAjaran ? (typeof data.tahunAjaran === 'object' ? data.tahunAjaran : { tahun_ajaran: data.tahunAjaran, semester: data.semester }) : {};
+      const wk = data.waliKelas || data.assignment || {};
+      const rk = data.ranking || (data.academic && data.academic.summary) || {};
+      const grades = data.grades || (data.academic && data.academic.subjects) || [];
+      const sikapObj = data.sikap || {};
+      const kehadiran = data.kehadiran || {};
+
+      const avgScoreVal = (rk.avgScore !== undefined && rk.avgScore !== null) ? rk.avgScore : (rk.rataNilai !== undefined ? rk.rataNilai : '-');
+      const rankVal = (rk.rank !== undefined && rk.rank !== null) ? rk.rank : '-';
+      const totalSiswaVal = rk.totalSiswa || rk.totalSiswaKelas || '-';
+      const rankStatusVal = rk.rankingStatus || rk.status || 'Sementara';
+
+      const kota = p.kota || 'Kota';
+      const tglCetak = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+
+      let gradesHtml = '';
+      if (grades.length === 0) {
+        gradesHtml = `<tr><td colspan="5" class="py-4 text-center text-slate-400 text-xs">Belum ada data nilai mata pelajaran.</td></tr>`;
+      } else {
+        gradesHtml = grades.map((g, idx) => `
+          <tr class="border-b border-slate-200">
+            <td class="py-2 px-2.5 text-center font-semibold text-slate-500">${idx + 1}</td>
+            <td class="py-2 px-3 font-bold text-slate-800">${g.nama || g.mata_pelajaran_nama || '-'}</td>
+            <td class="py-2 px-2.5 text-center font-mono font-bold text-slate-900">${(g.nilai_akhir !== null && g.nilai_akhir !== undefined && g.nilai_akhir !== '') ? g.nilai_akhir : '-'}</td>
+            <td class="py-2 px-2.5 text-center font-bold text-slate-900">${g.predikat || '-'}</td>
+            <td class="py-2 px-3 text-xs text-slate-600 leading-snug">${g.deskripsi || '-'}</td>
+          </tr>
+        `).join('');
+      }
+
+      let sikapHtml = '';
+      const hasSikapData = sikapObj && (sikapObj.predikat || sikapObj.deskripsi) && sikapObj.predikat !== '-';
+      if (!hasSikapData) {
+        sikapHtml = `<tr><td colspan="3" class="py-3 text-center text-slate-400 text-xs">Belum ada penilaian sikap.</td></tr>`;
+      } else {
+        sikapHtml = `
+          <tr class="border-b border-slate-200">
+            <td class="py-2.5 px-3 font-semibold text-slate-800 w-44">Perkembangan Sikap &amp; Perilaku</td>
+            <td class="py-2.5 px-2.5 text-center font-bold text-slate-900 w-24">${sikapObj.predikat || '-'}</td>
+            <td class="py-2.5 px-3 text-xs text-slate-600 leading-snug">${sikapObj.deskripsi || '-'}</td>
+          </tr>
+        `;
+      }
+
+      container.innerHTML = `
+        <div class="space-y-6 text-slate-900 leading-normal max-w-3xl mx-auto">
+          <!-- Kop Resmi Sekolah -->
+          <div class="text-center pb-3 border-b-2 border-slate-900 border-double space-y-1">
+            <h1 class="text-lg sm:text-xl font-extrabold uppercase tracking-wide text-slate-900">${p.nama_sekolah || p.namaSekolah || ''}</h1>
+            <h2 class="text-sm sm:text-base font-bold text-slate-800">${p.alamat || ''}</h2>
+            <p class="text-[11px] text-slate-500">${p.alamat ? p.alamat + ' &bull; ' : ''}NPSN: ${p.npsn || '-'} &bull; Kode Pos: ${p.kode_pos || '-'}</p>
+          </div>
+
+          <!-- Judul Dokumen -->
+          <div class="text-center">
+            <h3 class="text-sm sm:text-base font-extrabold tracking-wide uppercase underline underline-offset-4">LAPORAN HASIL BELAJAR SISWA</h3>
+            <p class="text-xs text-slate-500 mt-1">RAPOR DIGITAL TAHUN PELAJARAN ${ta.tahun_ajaran || ''}</p>
+          </div>
+
+          <!-- Identitas Siswa -->
+          <div class="grid grid-cols-2 gap-4 text-xs bg-slate-50/70 p-4 rounded-xl border border-slate-200">
+            <div class="space-y-1.5">
+              <div class="flex"><span class="w-28 text-slate-500">Nama Siswa</span><span class="font-bold">: ${st.nama}</span></div>
+              <div class="flex"><span class="w-28 text-slate-500">NISN / NIS</span><span>: ${st.nisn || '-'}${st.nis ? ' / ' + st.nis : ''}</span></div>
+              <div class="flex"><span class="w-28 text-slate-500">Nomor Absen</span><span>: ${st.no_absen || '-'}</span></div>
+            </div>
+            <div class="space-y-1.5">
+              <div class="flex"><span class="w-28 text-slate-500">Kelas</span><span class="font-bold">: Kelas ${wk.kelas || '-'}</span></div>
+              <div class="flex"><span class="w-28 text-slate-500">Semester</span><span>: ${ta.semester || '-'}</span></div>
+              <div class="flex"><span class="w-28 text-slate-500">Tahun Ajaran</span><span>: ${ta.tahun_ajaran || '-'}</span></div>
+            </div>
+          </div>
+
+          <!-- Bagian A: Nilai Capaian Kompetensi Akademik -->
+          <div class="space-y-2">
+            <div class="flex items-center justify-between">
+              <h4 class="text-xs font-bold uppercase tracking-wider text-slate-900">A. Nilai Capaian Akademik</h4>
+              <div class="text-xs">
+                ${avgScoreVal !== '-' && avgScoreVal !== null ? `
+                  <span class="font-semibold text-slate-600">Rata-rata: <strong>${avgScoreVal}</strong> &bull; Peringkat: <strong class="text-blue-700">${rankVal}</strong> dari ${totalSiswaVal} siswa (${rankStatusVal === 'Final' ? 'Final' : 'Sementara'})</span>
+                ` : `
+                  <span class="text-slate-400 text-[11px]">(Nilai belum lengkap seluruhnya)</span>
+                `}
+              </div>
+            </div>
+            <div class="overflow-x-auto border border-slate-200 rounded-xl">
+              <table class="w-full text-left text-xs border-collapse">
+                <thead class="bg-slate-100/80 border-b border-slate-200 text-slate-700 font-bold uppercase text-[10px]">
+                  <tr>
+                    <th class="py-2.5 px-2.5 text-center w-10">No</th>
+                    <th class="py-2.5 px-3 min-w-[140px]">Mata Pelajaran</th>
+                    <th class="py-2.5 px-2.5 text-center w-16">Nilai Akhir</th>
+                    <th class="py-2.5 px-2.5 text-center w-16">Predikat</th>
+                    <th class="py-2.5 px-3">Capaian Kompetensi / Deskripsi</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                  ${gradesHtml}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Bagian B: Penilaian Karakter & Sikap -->
+          <div class="space-y-2 page-break-avoid">
+            <h4 class="text-xs font-bold uppercase tracking-wider text-slate-900">B. Perkembangan Karakter &amp; Sikap</h4>
+            <div class="overflow-x-auto border border-slate-200 rounded-xl">
+              <table class="w-full text-left text-xs border-collapse">
+                <thead class="bg-slate-100/80 border-b border-slate-200 text-slate-700 font-bold uppercase text-[10px]">
+                  <tr>
+                    <th class="py-2 px-3 w-44">Komponen Penilaian</th>
+                    <th class="py-2 px-2.5 text-center w-24">Predikat</th>
+                    <th class="py-2 px-3">Catatan Perkembangan Sikap</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                  ${sikapHtml}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Bagian C: Rekapitulasi Kehadiran -->
+          <div class="space-y-2 page-break-avoid">
+            <h4 class="text-xs font-bold uppercase tracking-wider text-slate-900">C. Ketidakhadiran</h4>
+            <div class="grid grid-cols-3 gap-3 text-xs">
+              <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl text-center">
+                <span class="text-slate-500 block text-[11px]">Sakit</span>
+                <span class="text-base font-bold text-slate-900">${kehadiran.sakit !== undefined && kehadiran.sakit !== '' ? kehadiran.sakit : 0}</span>
+                <span class="text-[10px] text-slate-400 block">Hari</span>
+              </div>
+              <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl text-center">
+                <span class="text-slate-500 block text-[11px]">Izin</span>
+                <span class="text-base font-bold text-slate-900">${kehadiran.izin !== undefined && kehadiran.izin !== '' ? kehadiran.izin : 0}</span>
+                <span class="text-[10px] text-slate-400 block">Hari</span>
+              </div>
+              <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl text-center">
+                <span class="text-slate-500 block text-[11px]">Tanpa Keterangan (Alpha)</span>
+                <span class="text-base font-bold text-slate-900">${kehadiran.alpha !== undefined && kehadiran.alpha !== '' ? kehadiran.alpha : 0}</span>
+                <span class="text-[10px] text-slate-400 block">Hari</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tanda Tangan Resmi Rapor -->
+          <div class="grid grid-cols-3 gap-4 text-center text-xs pt-6 page-break-avoid">
+            <div>
+              <p>Mengetahui,</p>
+              <p class="font-semibold text-slate-700">Orang Tua / Wali Siswa</p>
+              <div class="h-20"></div>
+              <p class="font-bold underline text-slate-900">( ....................................... )</p>
+            </div>
+            <div>
+              <p>&nbsp;</p>
+              <p class="font-semibold text-slate-700">Mengetahui Kepala Sekolah</p>
+              <div class="h-20"></div>
+              <p class="font-bold underline text-slate-900">${p.kepala_sekolah_nama || p.namaKepalaSekolah || '( ....................................... )'}</p>
+              <p class="text-[11px] text-slate-500">${(p.kepala_sekolah_nip || p.nipKepalaSekolah) ? 'NIP. ' + (p.kepala_sekolah_nip || p.nipKepalaSekolah) : 'NIP. .......................................'}</p>
+            </div>
+            <div>
+              <p>${kota}, ${tglCetak}</p>
+              <p class="font-semibold text-slate-700">Guru Wali Kelas</p>
+              <div class="h-20"></div>
+              <p class="font-bold underline text-slate-900">${wk.guruNama || wk.waliKelasNama || '( ....................................... )'}</p>
+              <p class="text-[11px] text-slate-500">${(wk.guruNip || wk.waliKelasNip) ? 'NIP. ' + (wk.guruNip || wk.waliKelasNip) : 'NIP. .......................................'}</p>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function printRaporRekap() {
+      document.body.classList.remove('print-individual');
+      window.print();
+    }
+
+    function printRaporIndividual() {
+      document.body.classList.add('print-individual');
+      window.print();
+      window.addEventListener('afterprint', () => {
+        document.body.classList.remove('print-individual');
+      }, { once: true });
     }
 
     // Modal Konfirmasi Umum
