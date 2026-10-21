@@ -603,7 +603,306 @@
           </div>
         </div>
 
-        <!-- VIEW CONTAINER: MODUL DALAM PERSIAPAN (Placeholder modular Phase 5-8) -->
+        <!-- VIEW CONTAINER: INPUT NILAI (Phase 6 - Wali Kelas) -->
+        <div id="view-input-nilai" class="hidden space-y-6">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+            <div>
+              <div class="flex items-center gap-2 mb-1">
+                <span id="nilai-header-class-badge" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">Kelas</span>
+                <span id="nilai-header-period-badge" class="text-xs text-slate-400 font-medium">Periode</span>
+              </div>
+              <h2 class="text-base sm:text-lg font-bold text-slate-900">Input Nilai Mata Pelajaran</h2>
+              <p class="text-xs text-slate-500">Isi nilai tugas 1–4, UTS, dan UAS. Nilai akhir dihitung otomatis di server berdasarkan bobot.</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-3">
+              <div>
+                <label for="select-nilai-mapel" class="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Pilih Mapel:</label>
+                <select id="select-nilai-mapel" onchange="loadNilaiMataPelajaran(this.value)"
+                  class="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600">
+                  <option value="">Memuat mata pelajaran...</option>
+                </select>
+              </div>
+              <div class="pt-3 sm:pt-0">
+                <button type="button" id="btn-save-nilai" onclick="handleSaveNilaiSubmit()"
+                  class="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-700 hover:bg-blue-800 text-white text-xs font-semibold rounded-xl transition-all shadow-xs disabled:opacity-50">
+                  <span id="nilai-spinner" class="spinner w-3.5 h-3.5 border-2 border-white rounded-full hidden"></span>
+                  <span id="nilai-save-text">Simpan Nilai</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div id="nilai-locked-banner" class="hidden p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-3">
+            <svg class="w-5 h-5 flex-shrink-0 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+            <div>
+              <div class="font-bold">Periode Akademik Terkunci (Read-Only)</div>
+              <div class="text-[11px] text-amber-700">Tahun ajaran ini telah ditutup oleh Kepala Sekolah. Nilai mata pelajaran bersifat baca-saja.</div>
+            </div>
+          </div>
+
+          <!-- Summary Bar & Bobot Info -->
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
+              <div>
+                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Status Kelengkapan</span>
+                <span id="nilai-progress-text" class="text-sm font-bold text-slate-900">0 / 0 Siswa Lengkap</span>
+              </div>
+              <span id="nilai-progress-badge" class="px-2.5 py-1 text-xs font-bold rounded-lg bg-slate-100 text-slate-600">0%</span>
+            </div>
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between md:col-span-2">
+              <div>
+                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Ketentuan Bobot Aktif</span>
+                <span id="nilai-bobot-info" class="text-xs font-semibold text-slate-700">Tugas: 40% | UTS: 30% | UAS: 30%</span>
+              </div>
+              <div class="text-[11px] text-slate-400 text-right">
+                Nilai Akhir dihitung setelah seluruh komponen (Tugas 1–4, UTS, UAS) terisi.
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead class="bg-slate-50/70 border-b border-slate-200 text-slate-500 font-semibold uppercase text-[10px] tracking-wider">
+                  <tr>
+                    <th class="py-3 px-3 text-center w-12">No</th>
+                    <th class="py-3 px-4 min-w-[160px]">Nama Siswa</th>
+                    <th class="py-3 px-2 text-center w-20">Tugas 1</th>
+                    <th class="py-3 px-2 text-center w-20">Tugas 2</th>
+                    <th class="py-3 px-2 text-center w-20">Tugas 3</th>
+                    <th class="py-3 px-2 text-center w-20">Tugas 4</th>
+                    <th class="py-3 px-2 text-center w-20">UTS</th>
+                    <th class="py-3 px-2 text-center w-20">UAS</th>
+                    <th class="py-3 px-2 text-center w-20 bg-slate-100/50">Akhir</th>
+                    <th class="py-3 px-2 text-center w-16 bg-slate-100/50">Predikat</th>
+                    <th class="py-3 px-3 text-center w-24">Status</th>
+                  </tr>
+                </thead>
+                <tbody id="nilai-table-body" class="divide-y divide-slate-100 text-slate-700">
+                  <tr>
+                    <td colspan="11" class="py-8 text-center text-slate-400">Pilih mata pelajaran untuk memuat tabel nilai.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- VIEW CONTAINER: SIKAP & KEHADIRAN (Phase 6 - Wali Kelas) -->
+        <div id="view-sikap-kehadiran" class="hidden space-y-6">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+            <div>
+              <div class="flex items-center gap-2 mb-1">
+                <span id="sh-header-class-badge" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">Kelas</span>
+                <span id="sh-header-period-badge" class="text-xs text-slate-400 font-medium">Periode</span>
+              </div>
+              <h2 class="text-base sm:text-lg font-bold text-slate-900">Penilaian Sikap &amp; Rekap Kehadiran</h2>
+              <p class="text-xs text-slate-500">Kelola predikat &amp; deskripsi sikap serta rekapitulasi kehadiran per semester.</p>
+            </div>
+            <!-- Tab selector -->
+            <div class="flex items-center p-1 bg-slate-100 rounded-xl">
+              <button type="button" id="tab-btn-sikap" onclick="switchSikapKehadiranTab('sikap')"
+                class="px-4 py-2 text-xs font-bold rounded-lg transition-all bg-white text-blue-700 shadow-xs">
+                Penilaian Sikap
+              </button>
+              <button type="button" id="tab-btn-kehadiran" onclick="switchSikapKehadiranTab('kehadiran')"
+                class="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 rounded-lg transition-all">
+                Rekap Kehadiran
+              </button>
+            </div>
+          </div>
+
+          <div id="sh-locked-banner" class="hidden p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-3">
+            <svg class="w-5 h-5 flex-shrink-0 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+            <div>
+              <div class="font-bold">Periode Akademik Terkunci (Read-Only)</div>
+              <div class="text-[11px] text-amber-700">Tahun ajaran ini telah ditutup. Data sikap dan kehadiran bersifat baca-saja.</div>
+            </div>
+          </div>
+
+          <!-- SUB-TAB SIKAP -->
+          <div id="subtab-sikap-container" class="space-y-4">
+            <div class="bg-blue-50/70 border border-blue-100 p-4 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs text-blue-900">
+              <div class="flex items-center gap-2">
+                <span class="font-bold">Aspek Utama Karakter Siswa SD:</span>
+                <span class="px-2 py-0.5 rounded-md bg-blue-100 font-medium">Religius</span>
+                <span class="px-2 py-0.5 rounded-md bg-blue-100 font-medium">Integritas</span>
+                <span class="px-2 py-0.5 rounded-md bg-blue-100 font-medium">Nasionalis</span>
+                <span class="px-2 py-0.5 rounded-md bg-blue-100 font-medium">Mandiri</span>
+                <span class="px-2 py-0.5 rounded-md bg-blue-100 font-medium">Gotong Royong</span>
+              </div>
+              <button type="button" id="btn-save-sikap" onclick="handleSaveSikapSubmit()"
+                class="px-5 py-2 bg-blue-700 hover:bg-blue-800 text-white text-xs font-semibold rounded-xl transition-all shadow-xs flex items-center gap-2">
+                <span id="sikap-spinner" class="spinner w-3.5 h-3.5 border-2 border-white rounded-full hidden"></span>
+                <span>Simpan Penilaian Sikap</span>
+              </button>
+            </div>
+
+            <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+              <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-slate-50/70 border-b border-slate-200 text-slate-500 font-semibold uppercase text-[10px] tracking-wider">
+                    <tr>
+                      <th class="py-3 px-3 text-center w-12">No</th>
+                      <th class="py-3 px-4 w-52">Nama Siswa</th>
+                      <th class="py-3 px-4 w-44">Predikat Sikap</th>
+                      <th class="py-3 px-4">Deskripsi / Catatan Karakter</th>
+                    </tr>
+                  </thead>
+                  <tbody id="sikap-table-body" class="divide-y divide-slate-100 text-slate-700">
+                    <tr><td colspan="4" class="py-8 text-center text-slate-400">Memuat data penilaian sikap...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- SUB-TAB KEHADIRAN -->
+          <div id="subtab-kehadiran-container" class="hidden space-y-4">
+            <!-- Metrics ringkasan kehadiran rombel -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs text-center">
+                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Hadir</span>
+                <span id="total-kehadiran-hadir" class="text-lg font-bold text-emerald-700">0</span>
+              </div>
+              <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs text-center">
+                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Sakit</span>
+                <span id="total-kehadiran-sakit" class="text-lg font-bold text-blue-700">0</span>
+              </div>
+              <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs text-center">
+                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Izin</span>
+                <span id="total-kehadiran-izin" class="text-lg font-bold text-amber-700">0</span>
+              </div>
+              <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs text-center">
+                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Alpa</span>
+                <span id="total-kehadiran-alpha" class="text-lg font-bold text-rose-700">0</span>
+              </div>
+            </div>
+
+            <div class="flex justify-end">
+              <button type="button" id="btn-save-kehadiran" onclick="handleSaveKehadiranSubmit()"
+                class="px-5 py-2 bg-blue-700 hover:bg-blue-800 text-white text-xs font-semibold rounded-xl transition-all shadow-xs flex items-center gap-2">
+                <span id="kehadiran-spinner" class="spinner w-3.5 h-3.5 border-2 border-white rounded-full hidden"></span>
+                <span>Simpan Rekap Kehadiran</span>
+              </button>
+            </div>
+
+            <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+              <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-slate-50/70 border-b border-slate-200 text-slate-500 font-semibold uppercase text-[10px] tracking-wider">
+                    <tr>
+                      <th class="py-3 px-3 text-center w-12">No</th>
+                      <th class="py-3 px-4 w-52">Nama Siswa</th>
+                      <th class="py-3 px-2 text-center w-24">Hadir (Hari)</th>
+                      <th class="py-3 px-2 text-center w-24">Sakit (Hari)</th>
+                      <th class="py-3 px-2 text-center w-24">Izin (Hari)</th>
+                      <th class="py-3 px-2 text-center w-24">Alpa (Hari)</th>
+                      <th class="py-3 px-4">Keterangan</th>
+                    </tr>
+                  </thead>
+                  <tbody id="kehadiran-table-body" class="divide-y divide-slate-100 text-slate-700">
+                    <tr><td colspan="7" class="py-8 text-center text-slate-400">Memuat rekap kehadiran...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- VIEW CONTAINER: PENGATURAN RAPOR (Phase 6 - Wali Kelas) -->
+        <div id="view-pengaturan-rapor" class="hidden space-y-6">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+            <div>
+              <div class="flex items-center gap-2 mb-1">
+                <span id="rapor-header-class-badge" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">Kelas</span>
+                <span id="rapor-header-period-badge" class="text-xs text-slate-400 font-medium">Periode</span>
+              </div>
+              <h2 class="text-base sm:text-lg font-bold text-slate-900">Pengaturan Bobot &amp; Predikat Rapor</h2>
+              <p class="text-xs text-slate-500">Konfigurasi persentase pembobotan nilai akhir serta rentang predikat A, B, C, dan D.</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button type="button" onclick="resetDefaultPengaturanRapor()"
+                class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition-all">
+                Reset Default
+              </button>
+              <button type="button" id="btn-save-pengaturan-rapor" onclick="handleSavePengaturanRaporSubmit()"
+                class="px-5 py-2.5 bg-blue-700 hover:bg-blue-800 text-white text-xs font-semibold rounded-xl transition-all shadow-xs flex items-center gap-2">
+                <span id="rapor-spinner" class="spinner w-3.5 h-3.5 border-2 border-white rounded-full hidden"></span>
+                <span>Simpan Pengaturan</span>
+              </button>
+            </div>
+          </div>
+
+          <div id="rapor-locked-banner" class="hidden p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-3">
+            <svg class="w-5 h-5 flex-shrink-0 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+            <div>
+              <div class="font-bold">Periode Akademik Terkunci (Read-Only)</div>
+              <div class="text-[11px] text-amber-700">Tahun ajaran ini telah ditutup oleh Kepala Sekolah. Pengaturan rapor bersifat baca-saja.</div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Form Bobot -->
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+              <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                <h3 class="text-xs font-bold text-slate-800 uppercase tracking-wider">1. Bobot Penilaian Komponen</h3>
+                <span id="badge-total-bobot" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">Total: 100%</span>
+              </div>
+
+              <div class="space-y-3">
+                <div>
+                  <label for="input-bobot-tugas" class="block text-xs font-semibold text-slate-600 mb-1">Bobot Rata-rata Tugas (1–4) %</label>
+                  <input type="number" id="input-bobot-tugas" min="0" max="100" oninput="updateBobotSumIndicator()"
+                    class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600 font-bold text-slate-800">
+                  <p class="text-[10px] text-slate-400 mt-1">Rata-rata 4 tugas dikalikan bobot ini.</p>
+                </div>
+                <div>
+                  <label for="input-bobot-uts" class="block text-xs font-semibold text-slate-600 mb-1">Bobot Ujian Tengah Semester (UTS) %</label>
+                  <input type="number" id="input-bobot-uts" min="0" max="100" oninput="updateBobotSumIndicator()"
+                    class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600 font-bold text-slate-800">
+                </div>
+                <div>
+                  <label for="input-bobot-uas" class="block text-xs font-semibold text-slate-600 mb-1">Bobot Ujian Akhir Semester (UAS) %</label>
+                  <input type="number" id="input-bobot-uas" min="0" max="100" oninput="updateBobotSumIndicator()"
+                    class="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600 font-bold text-slate-800">
+                </div>
+              </div>
+
+              <div class="p-3 rounded-xl bg-slate-50 text-[11px] text-slate-500">
+                Aturan PRD: Total ketiga bobot wajib berjumlah tepat 100%. Rumus akhir: <br>
+                <code>(rata_tugas &times; bobot_tugas + uts &times; bobot_uts + uas &times; bobot_uas) / 100</code>
+              </div>
+            </div>
+
+            <!-- Form Predikat -->
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+              <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                <h3 class="text-xs font-bold text-slate-800 uppercase tracking-wider">2. Rentang Konversi Predikat</h3>
+                <span class="text-[11px] text-slate-400">Skala 0–100</span>
+              </div>
+
+              <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-slate-50 text-slate-500 uppercase text-[10px]">
+                    <tr>
+                      <th class="py-2 px-3">Predikat</th>
+                      <th class="py-2 px-3">Nilai Min</th>
+                      <th class="py-2 px-3">Nilai Maks</th>
+                    </tr>
+                  </thead>
+                  <tbody id="predikat-table-body" class="divide-y divide-slate-100">
+                    <!-- Row predikat terisi dinamis -->
+                  </tbody>
+                </table>
+              </div>
+
+              <div id="predikat-validation-warning" class="hidden p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- VIEW CONTAINER: MODUL DALAM PERSIAPAN (Placeholder modular Phase 7-8) -->
         <div id="view-placeholder" class="hidden">
           <div class="bg-white border border-slate-200 rounded-2xl p-8 sm:p-12 text-center shadow-xs">
             <div id="placeholder-icon-container" class="w-16 h-16 bg-blue-50 text-blue-700 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-blue-100">
@@ -1051,7 +1350,13 @@
       siswaList: [],
       mapelList: [],
       currentPenugasanInfo: null,
-      siswaMapelKelasOptions: []
+      siswaMapelKelasOptions: [],
+      currentNilaiMapelId: null,
+      nilaiMapelData: null,
+      siswaSikapData: null,
+      rekapKehadiranData: null,
+      pengaturanRaporData: null,
+      activeSikapKehadiranTab: 'sikap'
     };
 
     // Konfigurasi Navigasi dan Metadata Modul Sesuai Role (PRD & Arsitektur)
@@ -1139,14 +1444,14 @@
         {
           id: 'input_nilai',
           title: 'Input Nilai',
-          phase: 'Phase 6',
+          phase: 'Phase 6 (Aktif)',
           desc: 'Pengisian nilai Tugas 1–4, UTS, dan UAS per mata pelajaran.',
           icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>'
         },
         {
           id: 'sikap_kehadiran',
           title: 'Sikap & Kehadiran',
-          phase: 'Phase 6',
+          phase: 'Phase 6 (Aktif)',
           desc: 'Pencatatan nilai karakter/sikap dan rekap kehadiran (S/I/A).',
           icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>'
         },
@@ -1160,7 +1465,7 @@
         {
           id: 'pengaturan_rapor',
           title: 'Pengaturan Rapor',
-          phase: 'Phase 6',
+          phase: 'Phase 6 (Aktif)',
           desc: 'Konfigurasi bobot penilaian (Tugas/UTS/UAS) dan rentang predikat.',
           icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/>'
         },
@@ -1393,6 +1698,9 @@
         document.getElementById('view-siswa').classList.add('hidden');
         document.getElementById('view-mata-pelajaran').classList.add('hidden');
         document.getElementById('view-siswa-mapel').classList.add('hidden');
+        document.getElementById('view-input-nilai').classList.add('hidden');
+        document.getElementById('view-sikap-kehadiran').classList.add('hidden');
+        document.getElementById('view-pengaturan-rapor').classList.add('hidden');
         document.getElementById('view-placeholder').classList.add('hidden');
 
         // Buka tampilan yang relevan
@@ -1417,6 +1725,15 @@
         } else if (routeId === 'siswa_mapel') {
           document.getElementById('view-siswa-mapel').classList.remove('hidden');
           initSiswaMapelOverview();
+        } else if (routeId === 'input_nilai') {
+          document.getElementById('view-input-nilai').classList.remove('hidden');
+          loadNilaiMataPelajaranView();
+        } else if (routeId === 'sikap_kehadiran') {
+          document.getElementById('view-sikap-kehadiran').classList.remove('hidden');
+          loadSikapKehadiranView();
+        } else if (routeId === 'pengaturan_rapor') {
+          document.getElementById('view-pengaturan-rapor').classList.remove('hidden');
+          loadPengaturanRaporView();
         } else {
           document.getElementById('view-placeholder').classList.remove('hidden');
           document.getElementById('placeholder-title').textContent = targetRoute.title;
@@ -2965,6 +3282,733 @@
       } catch (err) {
         sTbody.innerHTML = '<tr><td colspan="4" class="py-6 text-center text-red-500">Gagal memuat overview siswa.</td></tr>';
         mTbody.innerHTML = '<tr><td colspan="3" class="py-6 text-center text-red-500">Gagal memuat overview mapel.</td></tr>';
+      }
+    }
+
+    // ====================================================================
+    // JAVASCRIPT HANDLER PHASE 6: INPUT NILAI MATA PELAJARAN
+    // ====================================================================
+    async function loadNilaiMataPelajaranView() {
+      const select = document.getElementById('select-nilai-mapel');
+      select.innerHTML = '<option value="">Memuat mata pelajaran...</option>';
+      await loadNilaiMataPelajaran(null);
+    }
+
+    async function loadNilaiMataPelajaran(mapelId) {
+      const tbody = document.getElementById('nilai-table-body');
+      tbody.innerHTML = '<tr><td colspan="11" class="py-8 text-center text-slate-400">Memuat tabel nilai...</td></tr>';
+
+      try {
+        const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+        const res = await callBackend('apiGetNilaiMataPelajaran', token, mapelId, null);
+
+        if (!res || !res.success || !res.data) {
+          tbody.innerHTML = `<tr><td colspan="11" class="py-8 text-center text-rose-500">${(res && res.message) || 'Gagal memuat data nilai.'}</td></tr>`;
+          return;
+        }
+
+        const data = res.data;
+        APP_STATE.nilaiMapelData = data;
+        APP_STATE.currentNilaiMapelId = data.mapelCurrent ? data.mapelCurrent.id : null;
+
+        // Update header badges
+        if (data.assignment) {
+          document.getElementById('nilai-header-class-badge').textContent = 'Kelas ' + data.assignment.kelas;
+          document.getElementById('nilai-header-period-badge').textContent = data.assignment.tahunAjaran + ' - ' + data.assignment.semester;
+        }
+
+        // Locked Banner
+        const lockedBanner = document.getElementById('nilai-locked-banner');
+        const saveBtn = document.getElementById('btn-save-nilai');
+        if (data.isReadOnly) {
+          lockedBanner.classList.remove('hidden');
+          saveBtn.disabled = true;
+          saveBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        } else {
+          lockedBanner.classList.add('hidden');
+          saveBtn.disabled = false;
+          saveBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+
+        // Bobot Info
+        if (data.configRapor) {
+          document.getElementById('nilai-bobot-info').textContent =
+            `Tugas: ${data.configRapor.bobot_tugas}% | UTS: ${data.configRapor.bobot_uts}% | UAS: ${data.configRapor.bobot_uas}%`;
+        }
+
+        // Summary Info
+        updateNilaiSummaryDisplay(data.summary);
+
+        // Populate Select Dropdown
+        const select = document.getElementById('select-nilai-mapel');
+        select.innerHTML = '';
+        if (data.mapelList && data.mapelList.length > 0) {
+          data.mapelList.forEach(m => {
+            const opt = document.createElement('option');
+            opt.value = m.id;
+            opt.textContent = `[${m.kode}] ${m.nama}`;
+            if (data.mapelCurrent && m.id === data.mapelCurrent.id) {
+              opt.selected = true;
+            }
+            select.appendChild(opt);
+          });
+        } else {
+          select.innerHTML = '<option value="">Tidak ada mata pelajaran</option>';
+        }
+
+        // Render Table Rows
+        if (!data.siswaNilaiList || data.siswaNilaiList.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="11" class="py-8 text-center text-slate-400">Tidak ada siswa terdaftar pada kelas ini.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = '';
+        data.siswaNilaiList.forEach(s => {
+          const tr = document.createElement('tr');
+          tr.id = `row-nilai-${s.siswa_id}`;
+          tr.className = 'hover:bg-slate-50/60 transition-colors';
+
+          const readOnlyAttr = data.isReadOnly ? 'readonly disabled class="w-16 px-2 py-1 text-xs text-center rounded-lg border border-slate-200 bg-slate-100 text-slate-500 font-semibold cursor-not-allowed"' : 'class="input-grade w-16 px-2 py-1 text-xs text-center rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600 font-semibold text-slate-800"';
+
+          const akhirDisplay = s.is_complete && s.nilai_akhir !== '' ? Number(s.nilai_akhir).toFixed(2) : '-';
+          const predikatDisplay = s.predikat || '-';
+          const statusBadge = s.is_complete
+            ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">Lengkap</span>'
+            : '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">Belum Lengkap</span>';
+
+          tr.innerHTML = `
+            <td class="py-3 px-3 text-center text-slate-400 font-medium">${s.no_absen}</td>
+            <td class="py-3 px-4 font-semibold text-slate-900">${s.nama}</td>
+            <td class="py-3 px-2 text-center">
+              <input type="number" min="0" max="100" step="any" data-siswa-id="${s.siswa_id}" data-field="nilai_tugas_1" value="${s.nilai_tugas_1 !== '' ? s.nilai_tugas_1 : ''}" oninput="calculateRowClient('${s.siswa_id}')" ${readOnlyAttr} placeholder="-">
+            </td>
+            <td class="py-3 px-2 text-center">
+              <input type="number" min="0" max="100" step="any" data-siswa-id="${s.siswa_id}" data-field="nilai_tugas_2" value="${s.nilai_tugas_2 !== '' ? s.nilai_tugas_2 : ''}" oninput="calculateRowClient('${s.siswa_id}')" ${readOnlyAttr} placeholder="-">
+            </td>
+            <td class="py-3 px-2 text-center">
+              <input type="number" min="0" max="100" step="any" data-siswa-id="${s.siswa_id}" data-field="nilai_tugas_3" value="${s.nilai_tugas_3 !== '' ? s.nilai_tugas_3 : ''}" oninput="calculateRowClient('${s.siswa_id}')" ${readOnlyAttr} placeholder="-">
+            </td>
+            <td class="py-3 px-2 text-center">
+              <input type="number" min="0" max="100" step="any" data-siswa-id="${s.siswa_id}" data-field="nilai_tugas_4" value="${s.nilai_tugas_4 !== '' ? s.nilai_tugas_4 : ''}" oninput="calculateRowClient('${s.siswa_id}')" ${readOnlyAttr} placeholder="-">
+            </td>
+            <td class="py-3 px-2 text-center">
+              <input type="number" min="0" max="100" step="any" data-siswa-id="${s.siswa_id}" data-field="nilai_uts" value="${s.nilai_uts !== '' ? s.nilai_uts : ''}" oninput="calculateRowClient('${s.siswa_id}')" ${readOnlyAttr} placeholder="-">
+            </td>
+            <td class="py-3 px-2 text-center">
+              <input type="number" min="0" max="100" step="any" data-siswa-id="${s.siswa_id}" data-field="nilai_uas" value="${s.nilai_uas !== '' ? s.nilai_uas : ''}" oninput="calculateRowClient('${s.siswa_id}')" ${readOnlyAttr} placeholder="-">
+            </td>
+            <td class="py-3 px-2 text-center font-bold text-slate-800 bg-slate-50/50" id="cell-akhir-${s.siswa_id}">
+              ${akhirDisplay}
+            </td>
+            <td class="py-3 px-2 text-center font-bold text-blue-700 bg-slate-50/50" id="cell-predikat-${s.siswa_id}">
+              ${predikatDisplay}
+            </td>
+            <td class="py-3 px-3 text-center" id="cell-status-${s.siswa_id}">
+              ${statusBadge}
+            </td>
+          `;
+          tbody.appendChild(tr);
+        });
+
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="11" class="py-8 text-center text-rose-500">${err.message || 'Gagal memuat nilai.'}</td></tr>`;
+      }
+    }
+
+    function calculateRowClient(siswaId) {
+      const row = document.getElementById(`row-nilai-${siswaId}`);
+      if (!row) return;
+
+      const t1Val = row.querySelector('[data-field="nilai_tugas_1"]').value.trim();
+      const t2Val = row.querySelector('[data-field="nilai_tugas_2"]').value.trim();
+      const t3Val = row.querySelector('[data-field="nilai_tugas_3"]').value.trim();
+      const t4Val = row.querySelector('[data-field="nilai_tugas_4"]').value.trim();
+      const utsVal = row.querySelector('[data-field="nilai_uts"]').value.trim();
+      const uasVal = row.querySelector('[data-field="nilai_uas"]').value.trim();
+
+      const cellAkhir = document.getElementById(`cell-akhir-${siswaId}`);
+      const cellPredikat = document.getElementById(`cell-predikat-${siswaId}`);
+      const cellStatus = document.getElementById(`cell-status-${siswaId}`);
+
+      const isComplete = (t1Val !== '' && t2Val !== '' && t3Val !== '' && t4Val !== '' && utsVal !== '' && uasVal !== '');
+
+      if (isComplete) {
+        const config = (APP_STATE.nilaiMapelData && APP_STATE.nilaiMapelData.configRapor) || { bobot_tugas: 40, bobot_uts: 30, bobot_uas: 30 };
+        const t1 = Number(t1Val) || 0;
+        const t2 = Number(t2Val) || 0;
+        const t3 = Number(t3Val) || 0;
+        const t4 = Number(t4Val) || 0;
+        const uts = Number(utsVal) || 0;
+        const uas = Number(uasVal) || 0;
+
+        const rataTugas = (t1 + t2 + t3 + t4) / 4;
+        const rawAkhir = (rataTugas * config.bobot_tugas + uts * config.bobot_uts + uas * config.bobot_uas) / 100;
+        const akhir = Math.round(rawAkhir * 100) / 100;
+
+        cellAkhir.textContent = akhir.toFixed(2);
+
+        // Hitung predikat
+        let predikatLabel = '-';
+        const ranges = config.predikat || [];
+        for (let i = 0; i < ranges.length; i++) {
+          if (akhir >= Number(ranges[i].min) - 0.001 && akhir <= Number(ranges[i].max) + 0.001) {
+            predikatLabel = ranges[i].label;
+            break;
+          }
+        }
+        cellPredikat.textContent = predikatLabel;
+        cellStatus.innerHTML = '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">Lengkap</span>';
+      } else {
+        cellAkhir.textContent = '-';
+        cellPredikat.textContent = '-';
+        cellStatus.innerHTML = '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">Belum Lengkap</span>';
+      }
+    }
+
+    function updateNilaiSummaryDisplay(summary) {
+      if (!summary) return;
+      document.getElementById('nilai-progress-text').textContent = `${summary.jumlahLengkap} / ${summary.totalSiswa} Siswa Lengkap`;
+      const badge = document.getElementById('nilai-progress-badge');
+      badge.textContent = `${summary.persentase}%`;
+      if (summary.persentase === 100) {
+        badge.className = 'px-2.5 py-1 text-xs font-bold rounded-lg bg-emerald-100 text-emerald-800';
+      } else if (summary.persentase > 0) {
+        badge.className = 'px-2.5 py-1 text-xs font-bold rounded-lg bg-blue-100 text-blue-800';
+      } else {
+        badge.className = 'px-2.5 py-1 text-xs font-bold rounded-lg bg-slate-100 text-slate-600';
+      }
+    }
+
+    async function handleSaveNilaiSubmit() {
+      if (!APP_STATE.currentNilaiMapelId) {
+        showToast('Pilih mata pelajaran terlebih dahulu.', 'error');
+        return;
+      }
+
+      const saveBtn = document.getElementById('btn-save-nilai');
+      const spinner = document.getElementById('nilai-spinner');
+      const btnText = document.getElementById('nilai-save-text');
+
+      saveBtn.disabled = true;
+      spinner.classList.remove('hidden');
+      btnText.textContent = 'Menyimpan...';
+
+      try {
+        const rows = [];
+        const trs = document.querySelectorAll('#nilai-table-body tr');
+
+        for (let i = 0; i < trs.length; i++) {
+          const tr = trs[i];
+          const t1Input = tr.querySelector('[data-field="nilai_tugas_1"]');
+          if (!t1Input) continue;
+
+          const sId = t1Input.getAttribute('data-siswa-id');
+          const t1 = t1Input.value.trim();
+          const t2 = tr.querySelector('[data-field="nilai_tugas_2"]').value.trim();
+          const t3 = tr.querySelector('[data-field="nilai_tugas_3"]').value.trim();
+          const t4 = tr.querySelector('[data-field="nilai_tugas_4"]').value.trim();
+          const uts = tr.querySelector('[data-field="nilai_uts"]').value.trim();
+          const uas = tr.querySelector('[data-field="nilai_uas"]').value.trim();
+
+          // Validasi rentang 0-100
+          const checkVals = [t1, t2, t3, t4, uts, uas];
+          for (let v of checkVals) {
+            if (v !== '') {
+              const num = Number(v);
+              if (isNaN(num) || num < 0 || num > 100) {
+                showToast('Nilai harus berupa angka di antara 0 sampai 100.', 'error');
+                return;
+              }
+            }
+          }
+
+          rows.push({
+            siswa_id: sId,
+            nilai_tugas_1: t1,
+            nilai_tugas_2: t2,
+            nilai_tugas_3: t3,
+            nilai_tugas_4: t4,
+            nilai_uts: uts,
+            nilai_uas: uas
+          });
+        }
+
+        const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+        const res = await callBackend('apiSaveNilaiMataPelajaranBatch', token, {
+          mata_pelajaran_id: APP_STATE.currentNilaiMapelId,
+          rows: rows
+        });
+
+        if (res && res.success) {
+          showToast(res.message || 'Nilai berhasil disimpan.', 'success');
+          await loadNilaiMataPelajaran(APP_STATE.currentNilaiMapelId);
+        } else {
+          showToast((res && res.message) || 'Gagal menyimpan nilai.', 'error');
+        }
+      } catch (err) {
+        showToast(err.message || 'Terjadi kesalahan sistem saat menyimpan nilai.', 'error');
+      } finally {
+        saveBtn.disabled = false;
+        spinner.classList.add('hidden');
+        btnText.textContent = 'Simpan Nilai';
+      }
+    }
+
+    // ====================================================================
+    // JAVASCRIPT HANDLER PHASE 6: SIKAP & REKAP KEHADIRAN
+    // ====================================================================
+    function switchSikapKehadiranTab(tab) {
+      APP_STATE.activeSikapKehadiranTab = tab;
+      const btnSikap = document.getElementById('tab-btn-sikap');
+      const btnKehadiran = document.getElementById('tab-btn-kehadiran');
+      const containerSikap = document.getElementById('subtab-sikap-container');
+      const containerKehadiran = document.getElementById('subtab-kehadiran-container');
+
+      if (tab === 'sikap') {
+        btnSikap.className = 'px-4 py-2 text-xs font-bold rounded-lg transition-all bg-white text-blue-700 shadow-xs';
+        btnKehadiran.className = 'px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 rounded-lg transition-all';
+        containerSikap.classList.remove('hidden');
+        containerKehadiran.classList.add('hidden');
+        loadSikapData();
+      } else {
+        btnKehadiran.className = 'px-4 py-2 text-xs font-bold rounded-lg transition-all bg-white text-blue-700 shadow-xs';
+        btnSikap.className = 'px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 rounded-lg transition-all';
+        containerKehadiran.classList.remove('hidden');
+        containerSikap.classList.add('hidden');
+        loadKehadiranData();
+      }
+    }
+
+    async function loadSikapKehadiranView() {
+      switchSikapKehadiranTab(APP_STATE.activeSikapKehadiranTab || 'sikap');
+    }
+
+    async function loadSikapData() {
+      const tbody = document.getElementById('sikap-table-body');
+      tbody.innerHTML = '<tr><td colspan="4" class="py-8 text-center text-slate-400">Memuat data penilaian sikap...</td></tr>';
+
+      try {
+        const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+        const res = await callBackend('apiGetNilaiSikapList', token, null);
+
+        if (!res || !res.success || !res.data) {
+          tbody.innerHTML = `<tr><td colspan="4" class="py-8 text-center text-rose-500">${(res && res.message) || 'Gagal memuat data sikap.'}</td></tr>`;
+          return;
+        }
+
+        const data = res.data;
+        APP_STATE.siswaSikapData = data;
+
+        if (data.assignment) {
+          document.getElementById('sh-header-class-badge').textContent = 'Kelas ' + data.assignment.kelas;
+          document.getElementById('sh-header-period-badge').textContent = data.assignment.tahunAjaran + ' - ' + data.assignment.semester;
+        }
+
+        const lockedBanner = document.getElementById('sh-locked-banner');
+        const saveBtn = document.getElementById('btn-save-sikap');
+        if (data.isReadOnly) {
+          lockedBanner.classList.remove('hidden');
+          saveBtn.disabled = true;
+          saveBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        } else {
+          lockedBanner.classList.add('hidden');
+          saveBtn.disabled = false;
+          saveBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+
+        if (!data.siswaSikapList || data.siswaSikapList.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="4" class="py-8 text-center text-slate-400">Tidak ada siswa terdaftar pada kelas ini.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = '';
+        data.siswaSikapList.forEach(s => {
+          const tr = document.createElement('tr');
+          tr.className = 'hover:bg-slate-50/60 transition-colors';
+
+          const readOnlyAttr = data.isReadOnly ? 'disabled class="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed"' : 'class="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"';
+          const textAttr = data.isReadOnly ? 'readonly disabled class="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed"' : 'class="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600 text-slate-800"';
+
+          tr.innerHTML = `
+            <td class="py-3 px-3 text-center text-slate-400 font-medium">${s.no_absen}</td>
+            <td class="py-3 px-4 font-semibold text-slate-900">${s.nama}</td>
+            <td class="py-3 px-4">
+              <select data-sikap-siswa-id="${s.siswa_id}" data-field="predikat" ${readOnlyAttr}>
+                <option value="">-- Pilih Predikat --</option>
+                <option value="Sangat Baik" ${s.predikat === 'Sangat Baik' ? 'selected' : ''}>Sangat Baik (A)</option>
+                <option value="Baik" ${s.predikat === 'Baik' ? 'selected' : ''}>Baik (B)</option>
+                <option value="Cukup" ${s.predikat === 'Cukup' ? 'selected' : ''}>Cukup (C)</option>
+                <option value="Kurang" ${s.predikat === 'Kurang' ? 'selected' : ''}>Kurang (D)</option>
+              </select>
+            </td>
+            <td class="py-3 px-4">
+              <input type="text" data-sikap-siswa-id="${s.siswa_id}" data-field="deskripsi" value="${s.deskripsi ? s.deskripsi.replace(/"/g, '&quot;') : ''}" ${textAttr} placeholder="Contoh: Menunjukkan sikap religius dan santun dalam gotong royong...">
+            </td>
+          `;
+          tbody.appendChild(tr);
+        });
+
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="4" class="py-8 text-center text-rose-500">${err.message || 'Gagal memuat penilaian sikap.'}</td></tr>`;
+      }
+    }
+
+    async function handleSaveSikapSubmit() {
+      const saveBtn = document.getElementById('btn-save-sikap');
+      const spinner = document.getElementById('sikap-spinner');
+      saveBtn.disabled = true;
+      spinner.classList.remove('hidden');
+
+      try {
+        const rows = [];
+        const selects = document.querySelectorAll('[data-sikap-siswa-id][data-field="predikat"]');
+
+        selects.forEach(sel => {
+          const sId = sel.getAttribute('data-sikap-siswa-id');
+          const predikat = sel.value;
+          const deskripsiInput = document.querySelector(`input[data-sikap-siswa-id="${sId}"][data-field="deskripsi"]`);
+          const deskripsi = deskripsiInput ? deskripsiInput.value.trim() : '';
+
+          rows.push({
+            siswa_id: sId,
+            predikat: predikat,
+            deskripsi: deskripsi
+          });
+        });
+
+        const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+        const res = await callBackend('apiSaveNilaiSikapBatch', token, { rows: rows });
+
+        if (res && res.success) {
+          showToast(res.message || 'Penilaian sikap berhasil disimpan.', 'success');
+          await loadSikapData();
+        } else {
+          showToast((res && res.message) || 'Gagal menyimpan penilaian sikap.', 'error');
+        }
+      } catch (err) {
+        showToast(err.message || 'Terjadi kesalahan sistem saat menyimpan sikap.', 'error');
+      } finally {
+        saveBtn.disabled = false;
+        spinner.classList.add('hidden');
+      }
+    }
+
+    async function loadKehadiranData() {
+      const tbody = document.getElementById('kehadiran-table-body');
+      tbody.innerHTML = '<tr><td colspan="7" class="py-8 text-center text-slate-400">Memuat rekap kehadiran...</td></tr>';
+
+      try {
+        const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+        const res = await callBackend('apiGetRekapKehadiranList', token, null);
+
+        if (!res || !res.success || !res.data) {
+          tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-rose-500">${(res && res.message) || 'Gagal memuat kehadiran.'}</td></tr>`;
+          return;
+        }
+
+        const data = res.data;
+        APP_STATE.rekapKehadiranData = data;
+
+        if (data.assignment) {
+          document.getElementById('sh-header-class-badge').textContent = 'Kelas ' + data.assignment.kelas;
+          document.getElementById('sh-header-period-badge').textContent = data.assignment.tahunAjaran + ' - ' + data.assignment.semester;
+        }
+
+        // Update totals
+        if (data.totals) {
+          document.getElementById('total-kehadiran-hadir').textContent = data.totals.hadir;
+          document.getElementById('total-kehadiran-sakit').textContent = data.totals.sakit;
+          document.getElementById('total-kehadiran-izin').textContent = data.totals.izin;
+          document.getElementById('total-kehadiran-alpha').textContent = data.totals.alpha;
+        }
+
+        const lockedBanner = document.getElementById('sh-locked-banner');
+        const saveBtn = document.getElementById('btn-save-kehadiran');
+        if (data.isReadOnly) {
+          lockedBanner.classList.remove('hidden');
+          saveBtn.disabled = true;
+          saveBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        } else {
+          lockedBanner.classList.add('hidden');
+          saveBtn.disabled = false;
+          saveBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+
+        if (!data.siswaKehadiranList || data.siswaKehadiranList.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" class="py-8 text-center text-slate-400">Tidak ada siswa terdaftar pada kelas ini.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = '';
+        data.siswaKehadiranList.forEach(s => {
+          const tr = document.createElement('tr');
+          tr.className = 'hover:bg-slate-50/60 transition-colors';
+
+          const numAttr = data.isReadOnly ? 'readonly disabled class="w-16 px-2 py-1 text-xs text-center rounded-lg border border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed"' : 'class="input-kehadiran w-16 px-2 py-1 text-xs text-center rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600 font-semibold text-slate-800"';
+          const textAttr = data.isReadOnly ? 'readonly disabled class="w-full px-3 py-1 text-xs rounded-lg border border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed"' : 'class="w-full px-3 py-1 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600 text-slate-800"';
+
+          tr.innerHTML = `
+            <td class="py-3 px-3 text-center text-slate-400 font-medium">${s.no_absen}</td>
+            <td class="py-3 px-4 font-semibold text-slate-900">${s.nama}</td>
+            <td class="py-3 px-2 text-center">
+              <input type="number" min="0" data-kh-siswa-id="${s.siswa_id}" data-field="jumlah_hadir" value="${s.jumlah_hadir !== '' ? s.jumlah_hadir : ''}" oninput="calculateKehadiranTotalsClient()" ${numAttr} placeholder="0">
+            </td>
+            <td class="py-3 px-2 text-center">
+              <input type="number" min="0" data-kh-siswa-id="${s.siswa_id}" data-field="jumlah_sakit" value="${s.jumlah_sakit !== '' ? s.jumlah_sakit : ''}" oninput="calculateKehadiranTotalsClient()" ${numAttr} placeholder="0">
+            </td>
+            <td class="py-3 px-2 text-center">
+              <input type="number" min="0" data-kh-siswa-id="${s.siswa_id}" data-field="jumlah_izin" value="${s.jumlah_izin !== '' ? s.jumlah_izin : ''}" oninput="calculateKehadiranTotalsClient()" ${numAttr} placeholder="0">
+            </td>
+            <td class="py-3 px-2 text-center">
+              <input type="number" min="0" data-kh-siswa-id="${s.siswa_id}" data-field="jumlah_alpha" value="${s.jumlah_alpha !== '' ? s.jumlah_alpha : ''}" oninput="calculateKehadiranTotalsClient()" ${numAttr} placeholder="0">
+            </td>
+            <td class="py-3 px-4">
+              <input type="text" data-kh-siswa-id="${s.siswa_id}" data-field="keterangan" value="${s.keterangan ? s.keterangan.replace(/"/g, '&quot;') : ''}" ${textAttr} placeholder="Keterangan opsional">
+            </td>
+          `;
+          tbody.appendChild(tr);
+        });
+
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-rose-500">${err.message || 'Gagal memuat rekap kehadiran.'}</td></tr>`;
+      }
+    }
+
+    function calculateKehadiranTotalsClient() {
+      let h = 0, s = 0, i = 0, a = 0;
+      document.querySelectorAll('[data-kh-siswa-id][data-field="jumlah_hadir"]').forEach(el => { h += (Number(el.value) || 0); });
+      document.querySelectorAll('[data-kh-siswa-id][data-field="jumlah_sakit"]').forEach(el => { s += (Number(el.value) || 0); });
+      document.querySelectorAll('[data-kh-siswa-id][data-field="jumlah_izin"]').forEach(el => { i += (Number(el.value) || 0); });
+      document.querySelectorAll('[data-kh-siswa-id][data-field="jumlah_alpha"]').forEach(el => { a += (Number(el.value) || 0); });
+
+      document.getElementById('total-kehadiran-hadir').textContent = h;
+      document.getElementById('total-kehadiran-sakit').textContent = s;
+      document.getElementById('total-kehadiran-izin').textContent = i;
+      document.getElementById('total-kehadiran-alpha').textContent = a;
+    }
+
+    async function handleSaveKehadiranSubmit() {
+      const saveBtn = document.getElementById('btn-save-kehadiran');
+      const spinner = document.getElementById('kehadiran-spinner');
+      saveBtn.disabled = true;
+      spinner.classList.remove('hidden');
+
+      try {
+        const rows = [];
+        const selects = document.querySelectorAll('[data-kh-siswa-id][data-field="jumlah_hadir"]');
+
+        for (let i = 0; i < selects.length; i++) {
+          const el = selects[i];
+          const sId = el.getAttribute('data-kh-siswa-id');
+          const jHadir = el.value.trim();
+          const jSakit = document.querySelector(`[data-kh-siswa-id="${sId}"][data-field="jumlah_sakit"]`).value.trim();
+          const jIzin = document.querySelector(`[data-kh-siswa-id="${sId}"][data-field="jumlah_izin"]`).value.trim();
+          const jAlpha = document.querySelector(`[data-kh-siswa-id="${sId}"][data-field="jumlah_alpha"]`).value.trim();
+          const ket = document.querySelector(`[data-kh-siswa-id="${sId}"][data-field="keterangan"]`).value.trim();
+
+          const vals = [jHadir, jSakit, jIzin, jAlpha];
+          for (let v of vals) {
+            if (v !== '') {
+              const num = parseInt(v, 10);
+              if (isNaN(num) || num < 0) {
+                showToast('Jumlah kehadiran harus berupa angka bilangan bulat tidak negatif (>= 0).', 'error');
+                return;
+              }
+            }
+          }
+
+          rows.push({
+            siswa_id: sId,
+            jumlah_hadir: jHadir,
+            jumlah_sakit: jSakit,
+            jumlah_izin: jIzin,
+            jumlah_alpha: jAlpha,
+            keterangan: ket
+          });
+        }
+
+        const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+        const res = await callBackend('apiSaveRekapKehadiranBatch', token, { rows: rows });
+
+        if (res && res.success) {
+          showToast(res.message || 'Rekap kehadiran berhasil disimpan.', 'success');
+          await loadKehadiranData();
+        } else {
+          showToast((res && res.message) || 'Gagal menyimpan rekap kehadiran.', 'error');
+        }
+      } catch (err) {
+        showToast(err.message || 'Terjadi kesalahan sistem saat menyimpan kehadiran.', 'error');
+      } finally {
+        saveBtn.disabled = false;
+        spinner.classList.add('hidden');
+      }
+    }
+
+    // ====================================================================
+    // JAVASCRIPT HANDLER PHASE 6: PENGATURAN RAPOR
+    // ====================================================================
+    async function loadPengaturanRaporView() {
+      try {
+        const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+        const res = await callBackend('apiGetPengaturanRapor', token, null);
+
+        if (!res || !res.success || !res.data) {
+          showToast((res && res.message) || 'Gagal memuat pengaturan rapor.', 'error');
+          return;
+        }
+
+        const data = res.data;
+        APP_STATE.pengaturanRaporData = data;
+
+        if (data.assignment) {
+          document.getElementById('rapor-header-class-badge').textContent = 'Kelas ' + data.assignment.kelas;
+          document.getElementById('rapor-header-period-badge').textContent = data.assignment.tahunAjaran + ' - ' + data.assignment.semester;
+        }
+
+        const lockedBanner = document.getElementById('rapor-locked-banner');
+        const saveBtn = document.getElementById('btn-save-pengaturan-rapor');
+        if (data.isReadOnly) {
+          lockedBanner.classList.remove('hidden');
+          saveBtn.disabled = true;
+          saveBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        } else {
+          lockedBanner.classList.add('hidden');
+          saveBtn.disabled = false;
+          saveBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+
+        const config = data.config;
+        document.getElementById('input-bobot-tugas').value = config.bobot_tugas;
+        document.getElementById('input-bobot-uts').value = config.bobot_uts;
+        document.getElementById('input-bobot-uas').value = config.bobot_uas;
+
+        updateBobotSumIndicator();
+        renderPredikatTable(config.predikat);
+
+      } catch (err) {
+        showToast(err.message || 'Gagal memuat pengaturan rapor.', 'error');
+      }
+    }
+
+    function updateBobotSumIndicator() {
+      const t = Number(document.getElementById('input-bobot-tugas').value) || 0;
+      const uts = Number(document.getElementById('input-bobot-uts').value) || 0;
+      const uas = Number(document.getElementById('input-bobot-uas').value) || 0;
+      const sum = t + uts + uas;
+
+      const badge = document.getElementById('badge-total-bobot');
+      badge.textContent = `Total: ${sum}%`;
+      if (Math.abs(sum - 100) < 0.01) {
+        badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800';
+      } else {
+        badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-800 animate-pulse';
+      }
+    }
+
+    function renderPredikatTable(ranges) {
+      const tbody = document.getElementById('predikat-table-body');
+      tbody.innerHTML = '';
+
+      const list = Array.isArray(ranges) ? ranges : [
+        { label: 'A', min: 90, max: 100 },
+        { label: 'B', min: 80, max: 89.99 },
+        { label: 'C', min: 70, max: 79.99 },
+        { label: 'D', min: 0, max: 69.99 }
+      ];
+
+      list.forEach((r, idx) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="py-2.5 px-3">
+            <input type="text" data-pred-idx="${idx}" data-field="label" value="${r.label}" class="w-16 px-2 py-1 text-xs font-bold text-center rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600 uppercase">
+          </td>
+          <td class="py-2.5 px-3">
+            <input type="number" step="any" min="0" max="100" data-pred-idx="${idx}" data-field="min" value="${r.min}" class="w-20 px-2 py-1 text-xs text-center rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600">
+          </td>
+          <td class="py-2.5 px-3">
+            <input type="number" step="any" min="0" max="100" data-pred-idx="${idx}" data-field="max" value="${r.max}" class="w-20 px-2 py-1 text-xs text-center rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600">
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function resetDefaultPengaturanRapor() {
+      document.getElementById('input-bobot-tugas').value = 40;
+      document.getElementById('input-bobot-uts').value = 30;
+      document.getElementById('input-bobot-uas').value = 30;
+      updateBobotSumIndicator();
+      renderPredikatTable([
+        { label: 'A', min: 90, max: 100 },
+        { label: 'B', min: 80, max: 89.99 },
+        { label: 'C', min: 70, max: 79.99 },
+        { label: 'D', min: 0, max: 69.99 }
+      ]);
+      showToast('Form direset ke konfigurasi standar sekolah.', 'info');
+    }
+
+    async function handleSavePengaturanRaporSubmit() {
+      const saveBtn = document.getElementById('btn-save-pengaturan-rapor');
+      const spinner = document.getElementById('rapor-spinner');
+
+      const bTugas = Number(document.getElementById('input-bobot-tugas').value);
+      const bUts = Number(document.getElementById('input-bobot-uts').value);
+      const bUas = Number(document.getElementById('input-bobot-uas').value);
+
+      if (isNaN(bTugas) || isNaN(bUts) || isNaN(bUas)) {
+        showToast('Seluruh bobot harus berupa angka.', 'error');
+        return;
+      }
+
+      const sum = bTugas + bUts + bUas;
+      if (Math.abs(sum - 100) > 0.01) {
+        showToast('Total ketiga bobot harus tepat 100% (saat ini: ' + sum + '%).', 'error');
+        return;
+      }
+
+      // Kumpulkan rentang predikat
+      const predikatList = [];
+      const rows = document.querySelectorAll('#predikat-table-body tr');
+      for (let i = 0; i < rows.length; i++) {
+        const tr = rows[i];
+        const lbl = tr.querySelector('[data-field="label"]').value.trim();
+        const minVal = Number(tr.querySelector('[data-field="min"]').value);
+        const maxVal = Number(tr.querySelector('[data-field="max"]').value);
+
+        if (!lbl) {
+          showToast('Label predikat tidak boleh kosong.', 'error');
+          return;
+        }
+        if (isNaN(minVal) || isNaN(maxVal) || minVal < 0 || maxVal > 100 || minVal >= maxVal) {
+          showToast('Rentang predikat ' + lbl + ' harus berada dalam rentang 0-100 dan min < maks.', 'error');
+          return;
+        }
+        predikatList.push({ label: lbl, min: minVal, max: maxVal });
+      }
+
+      saveBtn.disabled = true;
+      spinner.classList.remove('hidden');
+
+      try {
+        const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+        const res = await callBackend('apiSavePengaturanRapor', token, {
+          bobot_tugas: bTugas,
+          bobot_uts: bUts,
+          bobot_uas: bUas,
+          predikat: predikatList
+        });
+
+        if (res && res.success) {
+          showToast(res.message || 'Pengaturan rapor berhasil disimpan.', 'success');
+          await loadPengaturanRaporView();
+        } else {
+          showToast((res && res.message) || 'Gagal menyimpan pengaturan rapor.', 'error');
+        }
+      } catch (err) {
+        showToast(err.message || 'Terjadi kesalahan sistem saat menyimpan pengaturan rapor.', 'error');
+      } finally {
+        saveBtn.disabled = false;
+        spinner.classList.add('hidden');
       }
     }
 

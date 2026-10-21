@@ -2616,6 +2616,1064 @@ function apiDeleteMataPelajaran(sessionToken, mapelId) {
 }
 
 // ============================================================================
+// 6. MODUL PHASE 6: PENGATURAN RAPOR, NILAI, SIKAP & REKAP KEHADIRAN
+// ============================================================================
+
+/**
+ * Menentukan predikat dari nilai numerik berdasarkan rentang konfigurasi rapor.
+ *
+ * @param {number|string} score
+ * @param {Array<Object>} predikatRanges
+ * @return {string}
+ */
+function resolvePredikatScore(score, predikatRanges) {
+  if (score === null || score === undefined || score === '' || isNaN(score)) {
+    return '-';
+  }
+  const num = Number(score);
+  if (!Array.isArray(predikatRanges) || predikatRanges.length === 0) {
+    if (num >= 90) return 'A';
+    if (num >= 80) return 'B';
+    if (num >= 70) return 'C';
+    return 'D';
+  }
+  for (let i = 0; i < predikatRanges.length; i++) {
+    const r = predikatRanges[i];
+    const min = Number(r.min);
+    const max = Number(r.max);
+    if (num >= min - 0.001 && num <= max + 0.001) {
+      return r.label;
+    }
+  }
+  const sorted = predikatRanges.slice().sort((a, b) => Number(a.min) - Number(b.min));
+  if (num < Number(sorted[0].min)) return sorted[0].label;
+  if (num > Number(sorted[sorted.length - 1].max)) return sorted[sorted.length - 1].label;
+  return '-';
+}
+
+/**
+ * Mengambil konfigurasi pengaturan rapor (bobot tugas, UTS, UAS, dan rentang predikat).
+ * Otorisasi: kepala_sekolah atau wali_kelas.
+ *
+ * @param {string} sessionToken
+ * @param {string} [requestedWaliKelasId]
+ * @return {{ success: boolean, data: Object|null, message: string }}
+ */
+function apiGetPengaturanRapor(sessionToken, requestedWaliKelasId) {
+  try {
+    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    const { assignment, activeYear } = resolveWaliKelasScope(user, requestedWaliKelasId);
+
+    if (!assignment) {
+      return buildResponse(false, null, 'Data penugasan kelas tidak ditemukan.');
+    }
+
+    const prData = getSheetDataBatch('pengaturan_rapor');
+    const existing = prData.rows.find(p => p.tahun_ajaran_id === assignment.tahun_ajaran_id && p.wali_kelas_id === assignment.id);
+
+    const defaultPredikat = [
+      { label: 'A', min: 90, max: 100 },
+      { label: 'B', min: 80, max: 89.99 },
+      { label: 'C', min: 70, max: 79.99 },
+      { label: 'D', min: 0, max: 69.99 }
+    ];
+
+    let config = {
+      id: existing ? existing.id : '',
+      tahun_ajaran_id: assignment.tahun_ajaran_id,
+      wali_kelas_id: assignment.id,
+      bobot_tugas: existing && existing.bobot_tugas !== '' ? Number(existing.bobot_tugas) : 40,
+      bobot_uts: existing && existing.bobot_uts !== '' ? Number(existing.bobot_uts) : 30,
+      bobot_uas: existing && existing.bobot_uas !== '' ? Number(existing.bobot_uas) : 30,
+      predikat: defaultPredikat,
+      isDefault: !existing
+    };
+
+    if (existing && existing.predikat) {
+      try {
+        const parsed = typeof existing.predikat === 'string' ? JSON.parse(existing.predikat) : existing.predikat;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          config.predikat = parsed;
+        }
+      } catch (e) {
+        config.predikat = defaultPredikat;
+      }
+    }
+
+    const isLocked = activeYear ? (activeYear.is_locked === true || String(activeYear.is_locked).toLowerCase() === 'true') : false;
+
+    return buildResponse(true, {
+      config: config,
+      assignment: {
+        id: assignment.id,
+        kelas: String(assignment.kelas),
+        tahunAjaran: activeYear ? activeYear.tahun_ajaran : '-',
+        semester: activeYear ? activeYear.semester : '-',
+        isLocked: isLocked
+      },
+      isReadOnly: isLocked
+    }, 'Pengaturan rapor berhasil dimuat.');
+  } catch (err) {
+    return buildResponse(false, null, err.message || 'Gagal memuat pengaturan rapor.');
+  }
+}
+
+/**
+ * Menyimpan konfigurasi pengaturan rapor (bobot dan rentang predikat).
+ * Otorisasi: kepala_sekolah atau wali_kelas.
+ *
+ * @param {string} sessionToken
+ * @param {Object} payload
+ * @return {{ success: boolean, data: Object|null, message: string }}
+ */
+function apiSavePengaturanRapor(sessionToken, payload) {
+  let lock = null;
+  if (typeof LockService !== 'undefined') {
+    lock = LockService.getScriptLock();
+    lock.waitLock(30000);
+  }
+  try {
+    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+
+    if (!payload || typeof payload !== 'object') {
+      return buildResponse(false, null, 'Data pengaturan rapor tidak valid.');
+    }
+
+    const requestedWkId = payload.wali_kelas_id ? String(payload.wali_kelas_id).trim() : null;
+    const { assignment, activeYear } = resolveWaliKelasScope(user, requestedWkId);
+
+    if (!assignment) {
+      return buildResponse(false, null, 'Penugasan kelas tidak ditemukan.');
+    }
+
+    // Proteksi periode terkunci
+    const taData = getSheetDataBatch('tahun_ajaran');
+    const ta = taData.rows.find(t => t.id === assignment.tahun_ajaran_id);
+    if (ta && (ta.is_locked === true || String(ta.is_locked).toLowerCase() === 'true')) {
+      return buildResponse(false, null, 'Periode akademik telah dikunci. Pengaturan rapor bersifat baca-saja.');
+    }
+
+    // Validasi Bobot
+    const bTugas = Number(payload.bobot_tugas);
+    const bUts = Number(payload.bobot_uts);
+    const bUas = Number(payload.bobot_uas);
+
+    if (isNaN(bTugas) || bTugas < 0 || isNaN(bUts) || bUts < 0 || isNaN(bUas) || bUas < 0) {
+      return buildResponse(false, null, 'Bobot tugas, UTS, dan UAS harus berupa angka tidak negatif (0–100).');
+    }
+
+    const totalBobot = bTugas + bUts + bUas;
+    if (Math.abs(totalBobot - 100) > 0.01) {
+      return buildResponse(false, null, 'Total bobot tugas, UTS, dan UAS harus tepat 100% (saat ini: ' + totalBobot + '%).');
+    }
+
+    // Validasi Predikat
+    let predikatList = payload.predikat;
+    if (typeof predikatList === 'string') {
+      try {
+        predikatList = JSON.parse(predikatList);
+      } catch (e) {
+        return buildResponse(false, null, 'Format data predikat tidak valid.');
+      }
+    }
+
+    if (!Array.isArray(predikatList) || predikatList.length < 2) {
+      return buildResponse(false, null, 'Pengaturan predikat minimal memiliki 2 rentang (contoh: A, B, C, D).');
+    }
+
+    for (let i = 0; i < predikatList.length; i++) {
+      const p = predikatList[i];
+      if (!p || typeof p !== 'object' || !p.label || typeof p.label !== 'string') {
+        return buildResponse(false, null, 'Label predikat pada baris ke-' + (i + 1) + ' wajib diisi.');
+      }
+      const minVal = Number(p.min);
+      const maxVal = Number(p.max);
+      if (isNaN(minVal) || isNaN(maxVal) || minVal < 0 || maxVal > 100 || minVal >= maxVal) {
+        return buildResponse(false, null, 'Rentang nilai predikat ' + p.label + ' harus dalam rentang 0–100 dan nilai minimum harus lebih kecil dari nilai maksimum.');
+      }
+    }
+
+    // Periksa kontinuitas (tidak ada overlap dan tidak ada gap)
+    const sortedPred = predikatList.slice().sort((a, b) => Number(a.min) - Number(b.min));
+    if (Number(sortedPred[0].min) > 0.01) {
+      return buildResponse(false, null, 'Rentang predikat terendah harus dimulai dari angka 0.');
+    }
+    if (Number(sortedPred[sortedPred.length - 1].max) < 99.99) {
+      return buildResponse(false, null, 'Rentang predikat tertinggi harus mencapai angka 100.');
+    }
+
+    for (let i = 0; i < sortedPred.length - 1; i++) {
+      const prev = sortedPred[i];
+      const next = sortedPred[i + 1];
+      const prevMax = Number(prev.max);
+      const nextMin = Number(next.min);
+
+      if (prevMax > nextMin + 0.001) {
+        return buildResponse(false, null, 'Terdapat tumpang tindih (overlap) antara predikat ' + prev.label + ' dan ' + next.label + '.');
+      }
+      if (nextMin - prevMax > 0.02) {
+        return buildResponse(false, null, 'Terdapat celah nilai (gap) antara predikat ' + prev.label + ' (maks: ' + prevMax + ') dan ' + next.label + ' (min: ' + nextMin + ').');
+      }
+    }
+
+    const prData = getSheetDataBatch('pengaturan_rapor');
+    const existing = prData.rows.find(p => p.tahun_ajaran_id === assignment.tahun_ajaran_id && p.wali_kelas_id === assignment.id);
+
+    const nowIso = new Date().toISOString();
+    const jsonPredikat = JSON.stringify(predikatList);
+
+    if (existing) {
+      updateSheetRow('pengaturan_rapor', existing._rowIndex, {
+        bobot_tugas: bTugas,
+        bobot_uts: bUts,
+        bobot_uas: bUas,
+        predikat: jsonPredikat,
+        updated_at: nowIso
+      });
+      return buildResponse(true, { id: existing.id }, 'Pengaturan rapor berhasil diperbarui.');
+    } else {
+      const newId = getStableUUID();
+      appendSheetRow('pengaturan_rapor', {
+        id: newId,
+        tahun_ajaran_id: assignment.tahun_ajaran_id,
+        wali_kelas_id: assignment.id,
+        bobot_tugas: bTugas,
+        bobot_uts: bUts,
+        bobot_uas: bUas,
+        predikat: jsonPredikat,
+        created_at: nowIso,
+        updated_at: nowIso
+      });
+      return buildResponse(true, { id: newId }, 'Pengaturan rapor berhasil disimpan.');
+    }
+  } catch (err) {
+    return buildResponse(false, null, err.message || 'Gagal menyimpan pengaturan rapor.');
+  } finally {
+    if (lock) {
+      try { lock.releaseLock(); } catch (e) {}
+    }
+  }
+}
+
+/**
+ * Mengambil daftar nilai mata pelajaran untuk seluruh siswa di kelas penugasan.
+ * Otorisasi: kepala_sekolah atau wali_kelas.
+ *
+ * @param {string} sessionToken
+ * @param {string} [mataPelajaranId]
+ * @param {string} [requestedWaliKelasId]
+ * @return {{ success: boolean, data: Object|null, message: string }}
+ */
+function apiGetNilaiMataPelajaran(sessionToken, mataPelajaranId, requestedWaliKelasId) {
+  try {
+    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    const { assignment, activeYear } = resolveWaliKelasScope(user, requestedWaliKelasId);
+
+    if (!assignment) {
+      return buildResponse(false, null, 'Data penugasan kelas tidak ditemukan.');
+    }
+
+    const mapelData = getSheetDataBatch('mata_pelajaran');
+    const activeMapels = mapelData.rows.filter(m =>
+      m.wali_kelas_id === assignment.id &&
+      (m.is_active === true || String(m.is_active).toLowerCase() === 'true')
+    );
+    activeMapels.sort((a, b) => a.kode_mata_pelajaran.localeCompare(b.kode_mata_pelajaran));
+
+    if (activeMapels.length === 0) {
+      return buildResponse(true, {
+        mapelCurrent: null,
+        mapelList: [],
+        siswaNilaiList: [],
+        configRapor: null,
+        summary: { totalSiswa: 0, jumlahLengkap: 0, persentase: 0 },
+        isReadOnly: true
+      }, 'Belum ada mata pelajaran aktif pada rombel ini.');
+    }
+
+    let targetMapel = null;
+    if (mataPelajaranId) {
+      targetMapel = activeMapels.find(m => m.id === mataPelajaranId);
+      if (!targetMapel) {
+        targetMapel = activeMapels[0];
+      }
+    } else {
+      targetMapel = activeMapels[0];
+    }
+
+    // Ambil konfigurasi rapor untuk predikat
+    const prData = getSheetDataBatch('pengaturan_rapor');
+    const existingPr = prData.rows.find(p => p.tahun_ajaran_id === assignment.tahun_ajaran_id && p.wali_kelas_id === assignment.id);
+    let predikatRanges = [
+      { label: 'A', min: 90, max: 100 },
+      { label: 'B', min: 80, max: 89.99 },
+      { label: 'C', min: 70, max: 79.99 },
+      { label: 'D', min: 0, max: 69.99 }
+    ];
+    if (existingPr && existingPr.predikat) {
+      try {
+        const parsed = typeof existingPr.predikat === 'string' ? JSON.parse(existingPr.predikat) : existingPr.predikat;
+        if (Array.isArray(parsed) && parsed.length > 0) predikatRanges = parsed;
+      } catch (e) {}
+    }
+
+    // Ambil siswa aktif
+    const sData = getSheetDataBatch('siswa');
+    const siswaList = sData.rows.filter(s =>
+      s.wali_kelas_id === assignment.id &&
+      (s.is_active === true || String(s.is_active).toLowerCase() === 'true')
+    );
+    siswaList.sort((a, b) => (Number(a.no_absen) || 0) - (Number(b.no_absen) || 0));
+
+    // Ambil nilai tersimpan
+    let nData = { rows: [] };
+    try {
+      nData = getSheetDataBatch('nilai_mata_pelajaran');
+    } catch (e) {}
+
+    let countLengkap = 0;
+
+    const siswaNilaiList = siswaList.map(s => {
+      const existingGrade = nData.rows.find(n => n.siswa_id === s.id && n.mata_pelajaran_id === targetMapel.id);
+      const isComplete = existingGrade ? (existingGrade.is_complete === true || String(existingGrade.is_complete).toLowerCase() === 'true') : false;
+      if (isComplete) {
+        countLengkap++;
+      }
+
+      const nAkhir = existingGrade && existingGrade.nilai_akhir !== '' && existingGrade.nilai_akhir !== null ? Number(existingGrade.nilai_akhir) : '';
+      const predikat = isComplete && nAkhir !== '' ? resolvePredikatScore(nAkhir, predikatRanges) : '-';
+
+      return {
+        id: existingGrade ? existingGrade.id : null,
+        siswa_id: s.id,
+        no_absen: Number(s.no_absen) || 0,
+        nama: s.nama,
+        nisn: s.nisn || '-',
+        nis: s.nis || '-',
+        nilai_tugas_1: existingGrade && existingGrade.nilai_tugas_1 !== '' && existingGrade.nilai_tugas_1 !== null ? Number(existingGrade.nilai_tugas_1) : '',
+        nilai_tugas_2: existingGrade && existingGrade.nilai_tugas_2 !== '' && existingGrade.nilai_tugas_2 !== null ? Number(existingGrade.nilai_tugas_2) : '',
+        nilai_tugas_3: existingGrade && existingGrade.nilai_tugas_3 !== '' && existingGrade.nilai_tugas_3 !== null ? Number(existingGrade.nilai_tugas_3) : '',
+        nilai_tugas_4: existingGrade && existingGrade.nilai_tugas_4 !== '' && existingGrade.nilai_tugas_4 !== null ? Number(existingGrade.nilai_tugas_4) : '',
+        nilai_uts: existingGrade && existingGrade.nilai_uts !== '' && existingGrade.nilai_uts !== null ? Number(existingGrade.nilai_uts) : '',
+        nilai_uas: existingGrade && existingGrade.nilai_uas !== '' && existingGrade.nilai_uas !== null ? Number(existingGrade.nilai_uas) : '',
+        nilai_akhir: nAkhir,
+        is_complete: isComplete,
+        predikat: predikat
+      };
+    });
+
+    const isLocked = activeYear ? (activeYear.is_locked === true || String(activeYear.is_locked).toLowerCase() === 'true') : false;
+
+    return buildResponse(true, {
+      mapelCurrent: {
+        id: targetMapel.id,
+        kode: targetMapel.kode_mata_pelajaran,
+        nama: targetMapel.mata_pelajaran
+      },
+      mapelList: activeMapels.map(m => ({ id: m.id, kode: m.kode_mata_pelajaran, nama: m.mata_pelajaran })),
+      siswaNilaiList: siswaNilaiList,
+      configRapor: {
+        bobot_tugas: existingPr ? Number(existingPr.bobot_tugas) : 40,
+        bobot_uts: existingPr ? Number(existingPr.bobot_uts) : 30,
+        bobot_uas: existingPr ? Number(existingPr.bobot_uas) : 30,
+        predikat: predikatRanges
+      },
+      summary: {
+        totalSiswa: siswaList.length,
+        jumlahLengkap: countLengkap,
+        persentase: siswaList.length > 0 ? Math.round((countLengkap / siswaList.length) * 100) : 0
+      },
+      assignment: {
+        id: assignment.id,
+        kelas: String(assignment.kelas),
+        tahunAjaran: activeYear ? activeYear.tahun_ajaran : '-',
+        semester: activeYear ? activeYear.semester : '-'
+      },
+      isReadOnly: isLocked
+    }, 'Daftar nilai berhasil dimuat.');
+  } catch (err) {
+    return buildResponse(false, null, err.message || 'Gagal memuat nilai mata pelajaran.');
+  }
+}
+
+/**
+ * Menyimpan batch nilai mata pelajaran untuk seluruh siswa kelas.
+ * Otorisasi: kepala_sekolah atau wali_kelas.
+ *
+ * @param {string} sessionToken
+ * @param {Object} payload
+ * @return {{ success: boolean, data: Object|null, message: string }}
+ */
+function apiSaveNilaiMataPelajaranBatch(sessionToken, payload) {
+  let lock = null;
+  if (typeof LockService !== 'undefined') {
+    lock = LockService.getScriptLock();
+    lock.waitLock(30000);
+  }
+  try {
+    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+
+    if (!payload || typeof payload !== 'object') {
+      return buildResponse(false, null, 'Data input nilai tidak valid.');
+    }
+
+    const targetMapelId = payload.mata_pelajaran_id ? String(payload.mata_pelajaran_id).trim() : null;
+    if (!targetMapelId) {
+      return buildResponse(false, null, 'ID mata pelajaran wajib ditentukan.');
+    }
+
+    const requestedWkId = payload.wali_kelas_id ? String(payload.wali_kelas_id).trim() : null;
+    const { assignment, activeYear } = resolveWaliKelasScope(user, requestedWkId);
+
+    if (!assignment) {
+      return buildResponse(false, null, 'Penugasan kelas tidak ditemukan.');
+    }
+
+    // Proteksi periode terkunci
+    const taData = getSheetDataBatch('tahun_ajaran');
+    const ta = taData.rows.find(t => t.id === assignment.tahun_ajaran_id);
+    if (ta && (ta.is_locked === true || String(ta.is_locked).toLowerCase() === 'true')) {
+      return buildResponse(false, null, 'Periode akademik telah dikunci. Nilai mata pelajaran bersifat baca-saja.');
+    }
+
+    // Pastikan mata pelajaran memang milik penugasan ini
+    const mapelData = getSheetDataBatch('mata_pelajaran');
+    const mapelItem = mapelData.rows.find(m => m.id === targetMapelId && m.wali_kelas_id === assignment.id);
+    if (!mapelItem) {
+      return buildResponse(false, null, 'Akses ditolak: Mata pelajaran ini tidak terdaftar pada kelas yang Anda ampu.');
+    }
+
+    // Pastikan siswa yang dikirim memang siswa milik penugasan ini
+    const sData = getSheetDataBatch('siswa');
+    const validSiswaIds = new Set(sData.rows.filter(s => s.wali_kelas_id === assignment.id).map(s => s.id));
+
+    const rows = Array.isArray(payload.rows) ? payload.rows : [];
+    if (rows.length === 0) {
+      return buildResponse(false, null, 'Tidak ada baris nilai yang dikirim untuk disimpan.');
+    }
+
+    // Ambil bobot penilaian untuk kalkulasi
+    const prData = getSheetDataBatch('pengaturan_rapor');
+    const existingPr = prData.rows.find(p => p.tahun_ajaran_id === assignment.tahun_ajaran_id && p.wali_kelas_id === assignment.id);
+    const bobotTugas = existingPr && existingPr.bobot_tugas !== '' ? Number(existingPr.bobot_tugas) : 40;
+    const bobotUts = existingPr && existingPr.bobot_uts !== '' ? Number(existingPr.bobot_uts) : 30;
+    const bobotUas = existingPr && existingPr.bobot_uas !== '' ? Number(existingPr.bobot_uas) : 30;
+
+    // Helper validasi nilai per sel
+    function parseGradeVal(val, fieldName, siswaId) {
+      if (val === null || val === undefined || val === '') {
+        return '';
+      }
+      const num = Number(val);
+      if (isNaN(num) || num < 0 || num > 100) {
+        throw new Error('Nilai ' + fieldName + ' harus berada dalam rentang angka 0 sampai 100.');
+      }
+      return num;
+    }
+
+    const nData = getSheetDataBatch('nilai_mata_pelajaran');
+    const nowIso = new Date().toISOString();
+    let updatedCount = 0;
+
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r || !r.siswa_id) continue;
+      const sId = String(r.siswa_id).trim();
+
+      if (!validSiswaIds.has(sId)) {
+        return buildResponse(false, null, 'Akses ditolak: Terdapat siswa yang bukan anggota rombel penugasan ini.');
+      }
+
+      const t1 = parseGradeVal(r.nilai_tugas_1, 'Tugas 1', sId);
+      const t2 = parseGradeVal(r.nilai_tugas_2, 'Tugas 2', sId);
+      const t3 = parseGradeVal(r.nilai_tugas_3, 'Tugas 3', sId);
+      const t4 = parseGradeVal(r.nilai_tugas_4, 'Tugas 4', sId);
+      const uts = parseGradeVal(r.nilai_uts, 'UTS', sId);
+      const uas = parseGradeVal(r.nilai_uas, 'UAS', sId);
+
+      // Rule: Hanya jika seluruh komponen wajib lengkap (T1, T2, T3, T4, UTS, UAS), nilai akhir dihitung.
+      // Komponen kosong tidak dianggap 0.
+      const isComplete = (t1 !== '' && t2 !== '' && t3 !== '' && t4 !== '' && uts !== '' && uas !== '');
+      let nilaiAkhir = '';
+
+      if (isComplete) {
+        const rataTugas = (t1 + t2 + t3 + t4) / 4;
+        const rawAkhir = (rataTugas * bobotTugas + uts * bobotUts + uas * bobotUas) / 100;
+        nilaiAkhir = Math.round(rawAkhir * 100) / 100;
+      }
+
+      const existingRecord = nData.rows.find(n => n.siswa_id === sId && n.mata_pelajaran_id === targetMapelId);
+
+      const fieldsToSave = {
+        siswa_id: sId,
+        mata_pelajaran_id: targetMapelId,
+        nilai_tugas_1: t1,
+        nilai_tugas_2: t2,
+        nilai_tugas_3: t3,
+        nilai_tugas_4: t4,
+        nilai_uts: uts,
+        nilai_uas: uas,
+        nilai_akhir: nilaiAkhir,
+        is_complete: isComplete,
+        updated_at: nowIso
+      };
+
+      if (existingRecord) {
+        updateSheetRow('nilai_mata_pelajaran', existingRecord._rowIndex, fieldsToSave);
+      } else {
+        fieldsToSave.id = getStableUUID();
+        fieldsToSave.created_at = nowIso;
+        appendSheetRow('nilai_mata_pelajaran', fieldsToSave);
+      }
+      updatedCount++;
+    }
+
+    return buildResponse(true, { updatedCount: updatedCount }, 'Nilai mata pelajaran ' + mapelItem.mata_pelajaran + ' berhasil disimpan.');
+  } catch (err) {
+    return buildResponse(false, null, err.message || 'Gagal menyimpan nilai mata pelajaran.');
+  } finally {
+    if (lock) {
+      try { lock.releaseLock(); } catch (e) {}
+    }
+  }
+}
+
+/**
+ * Mengambil daftar penilaian sikap siswa di kelas penugasan.
+ * Otorisasi: kepala_sekolah atau wali_kelas.
+ *
+ * @param {string} sessionToken
+ * @param {string} [requestedWaliKelasId]
+ * @return {{ success: boolean, data: Object|null, message: string }}
+ */
+function apiGetNilaiSikapList(sessionToken, requestedWaliKelasId) {
+  try {
+    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    const { assignment, activeYear } = resolveWaliKelasScope(user, requestedWaliKelasId);
+
+    if (!assignment) {
+      return buildResponse(false, null, 'Data penugasan kelas tidak ditemukan.');
+    }
+
+    const sData = getSheetDataBatch('siswa');
+    const siswaList = sData.rows.filter(s =>
+      s.wali_kelas_id === assignment.id &&
+      (s.is_active === true || String(s.is_active).toLowerCase() === 'true')
+    );
+    siswaList.sort((a, b) => (Number(a.no_absen) || 0) - (Number(b.no_absen) || 0));
+
+    let skData = { rows: [] };
+    try {
+      skData = getSheetDataBatch('nilai_sikap');
+    } catch (e) {}
+
+    let countLengkap = 0;
+
+    const siswaSikapList = siswaList.map(s => {
+      const existing = skData.rows.find(n => n.siswa_id === s.id);
+      const hasPredikat = existing && existing.predikat && String(existing.predikat).trim() !== '';
+      if (hasPredikat) {
+        countLengkap++;
+      }
+
+      return {
+        id: existing ? existing.id : null,
+        siswa_id: s.id,
+        no_absen: Number(s.no_absen) || 0,
+        nama: s.nama,
+        nisn: s.nisn || '-',
+        predikat: existing ? existing.predikat : '',
+        deskripsi: existing ? existing.deskripsi : ''
+      };
+    });
+
+    const isLocked = activeYear ? (activeYear.is_locked === true || String(activeYear.is_locked).toLowerCase() === 'true') : false;
+
+    return buildResponse(true, {
+      siswaSikapList: siswaSikapList,
+      summary: {
+        totalSiswa: siswaList.length,
+        jumlahLengkap: countLengkap,
+        persentase: siswaList.length > 0 ? Math.round((countLengkap / siswaList.length) * 100) : 0
+      },
+      assignment: {
+        id: assignment.id,
+        kelas: String(assignment.kelas),
+        tahunAjaran: activeYear ? activeYear.tahun_ajaran : '-',
+        semester: activeYear ? activeYear.semester : '-'
+      },
+      isReadOnly: isLocked
+    }, 'Daftar penilaian sikap berhasil dimuat.');
+  } catch (err) {
+    return buildResponse(false, null, err.message || 'Gagal memuat penilaian sikap.');
+  }
+}
+
+/**
+ * Menyimpan batch penilaian sikap siswa.
+ * Otorisasi: kepala_sekolah atau wali_kelas.
+ *
+ * @param {string} sessionToken
+ * @param {Object} payload
+ * @return {{ success: boolean, data: Object|null, message: string }}
+ */
+function apiSaveNilaiSikapBatch(sessionToken, payload) {
+  let lock = null;
+  if (typeof LockService !== 'undefined') {
+    lock = LockService.getScriptLock();
+    lock.waitLock(30000);
+  }
+  try {
+    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+
+    if (!payload || typeof payload !== 'object') {
+      return buildResponse(false, null, 'Data penilaian sikap tidak valid.');
+    }
+
+    const requestedWkId = payload.wali_kelas_id ? String(payload.wali_kelas_id).trim() : null;
+    const { assignment, activeYear } = resolveWaliKelasScope(user, requestedWkId);
+
+    if (!assignment) {
+      return buildResponse(false, null, 'Penugasan kelas tidak ditemukan.');
+    }
+
+    // Proteksi periode terkunci
+    const taData = getSheetDataBatch('tahun_ajaran');
+    const ta = taData.rows.find(t => t.id === assignment.tahun_ajaran_id);
+    if (ta && (ta.is_locked === true || String(ta.is_locked).toLowerCase() === 'true')) {
+      return buildResponse(false, null, 'Periode akademik telah dikunci. Penilaian sikap bersifat baca-saja.');
+    }
+
+    const sData = getSheetDataBatch('siswa');
+    const validSiswaIds = new Set(sData.rows.filter(s => s.wali_kelas_id === assignment.id).map(s => s.id));
+
+    const rows = Array.isArray(payload.rows) ? payload.rows : [];
+    if (rows.length === 0) {
+      return buildResponse(false, null, 'Tidak ada baris nilai sikap yang dikirim untuk disimpan.');
+    }
+
+    const validPredikats = new Set(['Sangat Baik', 'Baik', 'Cukup', 'Kurang', 'A', 'B', 'C', 'D']);
+    const skData = getSheetDataBatch('nilai_sikap');
+    const nowIso = new Date().toISOString();
+    let updatedCount = 0;
+
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r || !r.siswa_id) continue;
+      const sId = String(r.siswa_id).trim();
+
+      if (!validSiswaIds.has(sId)) {
+        return buildResponse(false, null, 'Akses ditolak: Terdapat siswa yang bukan anggota rombel penugasan ini.');
+      }
+
+      const cleanPredikat = r.predikat ? String(r.predikat).trim() : '';
+      if (cleanPredikat && !validPredikats.has(cleanPredikat)) {
+        return buildResponse(false, null, 'Predikat sikap "' + cleanPredikat + '" tidak valid. Pilihan yang diizinkan: Sangat Baik, Baik, Cukup, Kurang.');
+      }
+
+      const cleanDeskripsi = r.deskripsi ? String(r.deskripsi).trim() : '';
+
+      const existingRecord = skData.rows.find(n => n.siswa_id === sId);
+
+      const fieldsToSave = {
+        siswa_id: sId,
+        predikat: cleanPredikat,
+        deskripsi: cleanDeskripsi,
+        updated_at: nowIso
+      };
+
+      if (existingRecord) {
+        updateSheetRow('nilai_sikap', existingRecord._rowIndex, fieldsToSave);
+      } else {
+        fieldsToSave.id = getStableUUID();
+        fieldsToSave.created_at = nowIso;
+        appendSheetRow('nilai_sikap', fieldsToSave);
+      }
+      updatedCount++;
+    }
+
+    return buildResponse(true, { updatedCount: updatedCount }, 'Penilaian sikap berhasil disimpan.');
+  } catch (err) {
+    return buildResponse(false, null, err.message || 'Gagal menyimpan penilaian sikap.');
+  } finally {
+    if (lock) {
+      try { lock.releaseLock(); } catch (e) {}
+    }
+  }
+}
+
+/**
+ * Mengambil rekap kehadiran siswa di kelas penugasan.
+ * Otorisasi: kepala_sekolah atau wali_kelas.
+ *
+ * @param {string} sessionToken
+ * @param {string} [requestedWaliKelasId]
+ * @return {{ success: boolean, data: Object|null, message: string }}
+ */
+function apiGetRekapKehadiranList(sessionToken, requestedWaliKelasId) {
+  try {
+    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    const { assignment, activeYear } = resolveWaliKelasScope(user, requestedWaliKelasId);
+
+    if (!assignment) {
+      return buildResponse(false, null, 'Data penugasan kelas tidak ditemukan.');
+    }
+
+    const sData = getSheetDataBatch('siswa');
+    const siswaList = sData.rows.filter(s =>
+      s.wali_kelas_id === assignment.id &&
+      (s.is_active === true || String(s.is_active).toLowerCase() === 'true')
+    );
+    siswaList.sort((a, b) => (Number(a.no_absen) || 0) - (Number(b.no_absen) || 0));
+
+    let rkData = { rows: [] };
+    try {
+      rkData = getSheetDataBatch('rekap_kehadiran');
+    } catch (e) {}
+
+    let totalHadir = 0;
+    let totalSakit = 0;
+    let totalIzin = 0;
+    let totalAlpha = 0;
+    let countFilled = 0;
+
+    const siswaKehadiranList = siswaList.map(s => {
+      const existing = rkData.rows.find(r => r.siswa_id === s.id);
+      const jHadir = existing && existing.jumlah_hadir !== '' && existing.jumlah_hadir !== null ? Number(existing.jumlah_hadir) : '';
+      const jSakit = existing && existing.jumlah_sakit !== '' && existing.jumlah_sakit !== null ? Number(existing.jumlah_sakit) : '';
+      const jIzin = existing && existing.jumlah_izin !== '' && existing.jumlah_izin !== null ? Number(existing.jumlah_izin) : '';
+      const jAlpha = existing && existing.jumlah_alpha !== '' && existing.jumlah_alpha !== null ? Number(existing.jumlah_alpha) : '';
+
+      if (jHadir !== '' || jSakit !== '' || jIzin !== '' || jAlpha !== '') {
+        countFilled++;
+      }
+
+      if (jHadir !== '') totalHadir += jHadir;
+      if (jSakit !== '') totalSakit += jSakit;
+      if (jIzin !== '') totalIzin += jIzin;
+      if (jAlpha !== '') totalAlpha += jAlpha;
+
+      return {
+        id: existing ? existing.id : null,
+        siswa_id: s.id,
+        no_absen: Number(s.no_absen) || 0,
+        nama: s.nama,
+        nisn: s.nisn || '-',
+        jumlah_hadir: jHadir,
+        jumlah_sakit: jSakit,
+        jumlah_izin: jIzin,
+        jumlah_alpha: jAlpha,
+        keterangan: existing ? existing.keterangan : ''
+      };
+    });
+
+    const isLocked = activeYear ? (activeYear.is_locked === true || String(activeYear.is_locked).toLowerCase() === 'true') : false;
+
+    return buildResponse(true, {
+      siswaKehadiranList: siswaKehadiranList,
+      totals: {
+        hadir: totalHadir,
+        sakit: totalSakit,
+        izin: totalIzin,
+        alpha: totalAlpha
+      },
+      summary: {
+        totalSiswa: siswaList.length,
+        jumlahLengkap: countFilled,
+        persentase: siswaList.length > 0 ? Math.round((countFilled / siswaList.length) * 100) : 0
+      },
+      assignment: {
+        id: assignment.id,
+        kelas: String(assignment.kelas),
+        tahunAjaran: activeYear ? activeYear.tahun_ajaran : '-',
+        semester: activeYear ? activeYear.semester : '-'
+      },
+      isReadOnly: isLocked
+    }, 'Rekap kehadiran berhasil dimuat.');
+  } catch (err) {
+    return buildResponse(false, null, err.message || 'Gagal memuat rekap kehadiran.');
+  }
+}
+
+/**
+ * Menyimpan batch rekap kehadiran siswa.
+ * Otorisasi: kepala_sekolah atau wali_kelas.
+ *
+ * @param {string} sessionToken
+ * @param {Object} payload
+ * @return {{ success: boolean, data: Object|null, message: string }}
+ */
+function apiSaveRekapKehadiranBatch(sessionToken, payload) {
+  let lock = null;
+  if (typeof LockService !== 'undefined') {
+    lock = LockService.getScriptLock();
+    lock.waitLock(30000);
+  }
+  try {
+    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+
+    if (!payload || typeof payload !== 'object') {
+      return buildResponse(false, null, 'Data rekap kehadiran tidak valid.');
+    }
+
+    const requestedWkId = payload.wali_kelas_id ? String(payload.wali_kelas_id).trim() : null;
+    const { assignment, activeYear } = resolveWaliKelasScope(user, requestedWkId);
+
+    if (!assignment) {
+      return buildResponse(false, null, 'Penugasan kelas tidak ditemukan.');
+    }
+
+    // Proteksi periode terkunci
+    const taData = getSheetDataBatch('tahun_ajaran');
+    const ta = taData.rows.find(t => t.id === assignment.tahun_ajaran_id);
+    if (ta && (ta.is_locked === true || String(ta.is_locked).toLowerCase() === 'true')) {
+      return buildResponse(false, null, 'Periode akademik telah dikunci. Rekap kehadiran bersifat baca-saja.');
+    }
+
+    const sData = getSheetDataBatch('siswa');
+    const validSiswaIds = new Set(sData.rows.filter(s => s.wali_kelas_id === assignment.id).map(s => s.id));
+
+    const rows = Array.isArray(payload.rows) ? payload.rows : [];
+    if (rows.length === 0) {
+      return buildResponse(false, null, 'Tidak ada baris kehadiran yang dikirim untuk disimpan.');
+    }
+
+    function parseAttendanceVal(val, fieldName) {
+      if (val === null || val === undefined || val === '') {
+        return '';
+      }
+      const num = parseInt(val, 10);
+      if (isNaN(num) || num < 0) {
+        throw new Error('Jumlah ' + fieldName + ' harus berupa bilangan bulat tidak negatif (minimal 0).');
+      }
+      return num;
+    }
+
+    const rkData = getSheetDataBatch('rekap_kehadiran');
+    const nowIso = new Date().toISOString();
+    let updatedCount = 0;
+
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r || !r.siswa_id) continue;
+      const sId = String(r.siswa_id).trim();
+
+      if (!validSiswaIds.has(sId)) {
+        return buildResponse(false, null, 'Akses ditolak: Terdapat siswa yang bukan anggota rombel penugasan ini.');
+      }
+
+      const jHadir = parseAttendanceVal(r.jumlah_hadir, 'hadir');
+      const jSakit = parseAttendanceVal(r.jumlah_sakit, 'sakit');
+      const jIzin = parseAttendanceVal(r.jumlah_izin, 'izin');
+      const jAlpha = parseAttendanceVal(r.jumlah_alpha, 'alpa');
+      const cleanKet = r.keterangan ? String(r.keterangan).trim() : '';
+
+      const existingRecord = rkData.rows.find(rec => rec.siswa_id === sId);
+
+      const fieldsToSave = {
+        siswa_id: sId,
+        jumlah_hadir: jHadir,
+        jumlah_sakit: jSakit,
+        jumlah_izin: jIzin,
+        jumlah_alpha: jAlpha,
+        keterangan: cleanKet,
+        updated_at: nowIso
+      };
+
+      if (existingRecord) {
+        updateSheetRow('rekap_kehadiran', existingRecord._rowIndex, fieldsToSave);
+      } else {
+        fieldsToSave.id = getStableUUID();
+        fieldsToSave.created_at = nowIso;
+        appendSheetRow('rekap_kehadiran', fieldsToSave);
+      }
+      updatedCount++;
+    }
+
+    return buildResponse(true, { updatedCount: updatedCount }, 'Rekap kehadiran berhasil disimpan.');
+  } catch (err) {
+    return buildResponse(false, null, err.message || 'Gagal menyimpan rekap kehadiran.');
+  } finally {
+    if (lock) {
+      try { lock.releaseLock(); } catch (e) {}
+    }
+  }
+}
+
+/**
+ * Mengambil ringkasan indikator kelengkapan penilaian kelas.
+ * Otorisasi: kepala_sekolah atau wali_kelas.
+ *
+ * @param {string} sessionToken
+ * @param {string} [requestedWaliKelasId]
+ * @return {{ success: boolean, data: Object|null, message: string }}
+ */
+function apiGetKelengkapanPenilaian(sessionToken, requestedWaliKelasId) {
+  try {
+    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+
+    const sData = getSheetDataBatch('siswa');
+    const mData = getSheetDataBatch('mata_pelajaran');
+    const wkData = getSheetDataBatch('wali_kelas');
+    const taData = getSheetDataBatch('tahun_ajaran');
+    const uData = getSheetDataBatch('user');
+
+    let nData = { rows: [] };
+    let skData = { rows: [] };
+    let rkData = { rows: [] };
+    try { nData = getSheetDataBatch('nilai_mata_pelajaran'); } catch (e) {}
+    try { skData = getSheetDataBatch('nilai_sikap'); } catch (e) {}
+    try { rkData = getSheetDataBatch('rekap_kehadiran'); } catch (e) {}
+
+    const activeYear = taData.rows.find(t => t.is_active === true || String(t.is_active).toLowerCase() === 'true');
+
+    // Jika kepala sekolah memanggil tanpa filter: sajikan ringkasan 6 kelas
+    if (user.role === 'kepala_sekolah' && !requestedWaliKelasId) {
+      const activeAssignments = wkData.rows.filter(w =>
+        activeYear && w.tahun_ajaran_id === activeYear.id &&
+        (w.is_active === true || String(w.is_active).toLowerCase() === 'true')
+      );
+
+      const classOverviews = [1, 2, 3, 4, 5, 6].map(kelasNum => {
+        const assignment = activeAssignments.find(w => Number(w.kelas) === kelasNum);
+        if (!assignment) {
+          return {
+            kelas: String(kelasNum),
+            waliKelasNama: '-',
+            hasPenugasan: false,
+            siswaCount: 0,
+            mapelCount: 0,
+            nilaiPercent: 0,
+            sikapPercent: 0,
+            kehadiranPercent: 0,
+            statusLabel: 'Belum Ada Wali Kelas'
+          };
+        }
+
+        const teacher = uData.rows.find(u => u.id === assignment.user_id);
+        const activeSiswa = sData.rows.filter(s => s.wali_kelas_id === assignment.id && (s.is_active === true || String(s.is_active).toLowerCase() === 'true'));
+        const activeMapels = mData.rows.filter(m => m.wali_kelas_id === assignment.id && (m.is_active === true || String(m.is_active).toLowerCase() === 'true'));
+
+        const totalExpectedGrades = activeSiswa.length * activeMapels.length;
+        let countCompleteGrades = 0;
+        activeSiswa.forEach(s => {
+          activeMapels.forEach(m => {
+            const grade = nData.rows.find(n => n.siswa_id === s.id && n.mata_pelajaran_id === m.id);
+            if (grade && (grade.is_complete === true || String(grade.is_complete).toLowerCase() === 'true')) {
+              countCompleteGrades++;
+            }
+          });
+        });
+
+        const countSikap = activeSiswa.filter(s => skData.rows.some(sk => sk.siswa_id === s.id && sk.predikat && String(sk.predikat).trim() !== '')).length;
+        const countKehadiran = activeSiswa.filter(s => rkData.rows.some(rk => rk.siswa_id === s.id && (rk.jumlah_hadir !== '' || rk.jumlah_sakit !== '' || rk.jumlah_izin !== '' || rk.jumlah_alpha !== ''))).length;
+
+        const nilaiPct = totalExpectedGrades > 0 ? Math.round((countCompleteGrades / totalExpectedGrades) * 100) : 0;
+        const sikapPct = activeSiswa.length > 0 ? Math.round((countSikap / activeSiswa.length) * 100) : 0;
+        const kehadiranPct = activeSiswa.length > 0 ? Math.round((countKehadiran / activeSiswa.length) * 100) : 0;
+
+        let statusLabel = 'Belum Lengkap';
+        if (nilaiPct === 100 && sikapPct === 100 && kehadiranPct === 100) {
+          statusLabel = 'Lengkap';
+        } else if (nilaiPct > 0 || sikapPct > 0 || kehadiranPct > 0) {
+          statusLabel = 'Sebagian';
+        }
+
+        return {
+          kelas: String(kelasNum),
+          assignmentId: assignment.id,
+          waliKelasNama: teacher ? teacher.nama : '-',
+          hasPenugasan: true,
+          siswaCount: activeSiswa.length,
+          mapelCount: activeMapels.length,
+          nilaiPercent: nilaiPct,
+          sikapPercent: sikapPct,
+          kehadiranPercent: kehadiranPct,
+          statusLabel: statusLabel
+        };
+      });
+
+      return buildResponse(true, {
+        isMultiClass: true,
+        classes: classOverviews,
+        activeYear: activeYear ? activeYear.tahun_ajaran + ' ' + activeYear.semester : '-'
+      }, 'Data pemantauan kelengkapan sekolah berhasil dimuat.');
+    }
+
+    // Detail kelas tunggal
+    const { assignment } = resolveWaliKelasScope(user, requestedWaliKelasId);
+    if (!assignment) {
+      return buildResponse(false, null, 'Data penugasan kelas tidak ditemukan.');
+    }
+
+    const activeSiswa = sData.rows.filter(s => s.wali_kelas_id === assignment.id && (s.is_active === true || String(s.is_active).toLowerCase() === 'true'));
+    const activeMapels = mData.rows.filter(m => m.wali_kelas_id === assignment.id && (m.is_active === true || String(m.is_active).toLowerCase() === 'true'));
+    activeMapels.sort((a, b) => a.kode_mata_pelajaran.localeCompare(b.kode_mata_pelajaran));
+
+    const mapelProgress = activeMapels.map(m => {
+      let lengkap = 0;
+      activeSiswa.forEach(s => {
+        const grade = nData.rows.find(n => n.siswa_id === s.id && n.mata_pelajaran_id === m.id);
+        if (grade && (grade.is_complete === true || String(grade.is_complete).toLowerCase() === 'true')) {
+          lengkap++;
+        }
+      });
+      return {
+        id: m.id,
+        kode: m.kode_mata_pelajaran,
+        nama: m.mata_pelajaran,
+        totalSiswa: activeSiswa.length,
+        jumlahLengkap: lengkap,
+        persentase: activeSiswa.length > 0 ? Math.round((lengkap / activeSiswa.length) * 100) : 0
+      };
+    });
+
+    const countSikap = activeSiswa.filter(s => skData.rows.some(sk => sk.siswa_id === s.id && sk.predikat && String(sk.predikat).trim() !== '')).length;
+    const countKehadiran = activeSiswa.filter(s => rkData.rows.some(rk => rk.siswa_id === s.id && (rk.jumlah_hadir !== '' || rk.jumlah_sakit !== '' || rk.jumlah_izin !== '' || rk.jumlah_alpha !== ''))).length;
+
+    const totalExpectedGrades = activeSiswa.length * activeMapels.length;
+    let totalLengkapGrades = 0;
+    mapelProgress.forEach(mp => { totalLengkapGrades += mp.jumlahLengkap; });
+
+    const totalNilaiPct = totalExpectedGrades > 0 ? Math.round((totalLengkapGrades / totalExpectedGrades) * 100) : 0;
+    const totalSikapPct = activeSiswa.length > 0 ? Math.round((countSikap / activeSiswa.length) * 100) : 0;
+    const totalKehadiranPct = activeSiswa.length > 0 ? Math.round((countKehadiran / activeSiswa.length) * 100) : 0;
+
+    let overallStatus = 'Belum Lengkap';
+    if (totalNilaiPct === 100 && totalSikapPct === 100 && totalKehadiranPct === 100) {
+      overallStatus = 'Lengkap';
+    } else if (totalNilaiPct > 0 || totalSikapPct > 0 || totalKehadiranPct > 0) {
+      overallStatus = 'Sebagian';
+    }
+
+    return buildResponse(true, {
+      isMultiClass: false,
+      assignmentId: assignment.id,
+      kelas: String(assignment.kelas),
+      siswaCount: activeSiswa.length,
+      mapelCount: activeMapels.length,
+      mapelProgress: mapelProgress,
+      sikapProgress: {
+        totalSiswa: activeSiswa.length,
+        jumlahLengkap: countSikap,
+        persentase: totalSikapPct
+      },
+      kehadiranProgress: {
+        totalSiswa: activeSiswa.length,
+        jumlahLengkap: countKehadiran,
+        persentase: totalKehadiranPct
+      },
+      overallStatus: overallStatus,
+      totalNilaiPercent: totalNilaiPct,
+      totalSikapPercent: totalSikapPct,
+      totalKehadiranPercent: totalKehadiranPct
+    }, 'Kelengkapan penilaian kelas berhasil dimuat.');
+  } catch (err) {
+    return buildResponse(false, null, err.message || 'Gagal memuat kelengkapan penilaian.');
+  }
+}
+
+// ============================================================================
 // 7. ENTRYPOINT APLIKASI WEB (doGet)
 // ============================================================================
 
@@ -2681,6 +3739,16 @@ if (typeof module !== 'undefined' && module.exports) {
     apiSaveMataPelajaran,
     apiToggleMataPelajaranStatus,
     apiDeleteMataPelajaran,
+    resolvePredikatScore,
+    apiGetPengaturanRapor,
+    apiSavePengaturanRapor,
+    apiGetNilaiMataPelajaran,
+    apiSaveNilaiMataPelajaranBatch,
+    apiGetNilaiSikapList,
+    apiSaveNilaiSikapBatch,
+    apiGetRekapKehadiranList,
+    apiSaveRekapKehadiranBatch,
+    apiGetKelengkapanPenilaian,
     requireAuth,
     doGet
   };
