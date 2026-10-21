@@ -24,8 +24,102 @@ const AUTH_CONFIG = Object.freeze({
   DK_LEN: 32, // 256 bits output
   SESSION_TTL_SECONDS: 7200, // 2 jam sesi aktif
   GENERIC_AUTH_ERROR: 'Username atau password salah.',
-  INACTIVE_USER_ERROR: 'Akun Anda dinonaktifkan. Silakan hubungi Kepala Sekolah.'
+  INACTIVE_USER_ERROR: 'Akun Anda dinonaktifkan. Silakan hubungi Kepala Sekolah.',
+  // Mitigasi Brute Force & Quota Exhaustion
+  MAX_FAILED_ATTEMPTS: 5,        // Maksimal 5x percobaan gagal berurutan per username
+  LOCKOUT_DURATION_SECONDS: 900, // Durasi lockout 15 menit (900 detik)
+  LOCKOUT_ERROR: 'Terlalu banyak percobaan login gagal. Akun ditangguhkan sementara selama 15 menit.',
+  GLOBAL_RATE_LIMIT_BURST: 30,   // Batas burst percobaan login global per menit
+  GLOBAL_RATE_LIMIT_WINDOW: 60   // Window 60 detik
 });
+
+// Helper pencatatan dan pemeriksaan pembatasan percobaan login (throttling & lockout)
+const LoginThrottle_ = {
+  getLockoutStatus: function(cleanUsername) {
+    if (!cleanUsername) return { isLocked: false };
+    const lockKey = 'login_lock_' + cleanUsername;
+    let lockVal = null;
+    if (typeof CacheService !== 'undefined') {
+      try {
+        lockVal = CacheService.getScriptCache().get(lockKey);
+      } catch (e) {}
+    } else {
+      lockVal = _localMemoryCache.get(lockKey) || null;
+    }
+    if (lockVal) {
+      return { isLocked: true, message: AUTH_CONFIG.LOCKOUT_ERROR };
+    }
+    return { isLocked: false };
+  },
+
+  checkGlobalBurst: function() {
+    const burstKey = 'login_burst_' + Math.floor(Date.now() / 60000);
+    let count = 0;
+    if (typeof CacheService !== 'undefined') {
+      try {
+        const cache = CacheService.getScriptCache();
+        count = parseInt(cache.get(burstKey) || '0', 10) || 0;
+        if (count >= AUTH_CONFIG.GLOBAL_RATE_LIMIT_BURST) {
+          return { limited: true, message: 'Layanan login sedang sibuk. Silakan coba beberapa saat lagi.' };
+        }
+        cache.put(burstKey, String(count + 1), AUTH_CONFIG.GLOBAL_RATE_LIMIT_WINDOW);
+      } catch (e) {}
+    } else {
+      count = parseInt(_localMemoryCache.get(burstKey) || '0', 10) || 0;
+      if (count >= AUTH_CONFIG.GLOBAL_RATE_LIMIT_BURST) {
+        return { limited: true, message: 'Layanan login sedang sibuk. Silakan coba beberapa saat lagi.' };
+      }
+      _localMemoryCache.set(burstKey, String(count + 1));
+    }
+    return { limited: false };
+  },
+
+  recordFailure: function(cleanUsername) {
+    if (!cleanUsername) return { isLocked: false };
+    const failKey = 'login_fails_' + cleanUsername;
+    const lockKey = 'login_lock_' + cleanUsername;
+    let fails = 0;
+    if (typeof CacheService !== 'undefined') {
+      try {
+        const cache = CacheService.getScriptCache();
+        fails = (parseInt(cache.get(failKey) || '0', 10) || 0) + 1;
+        if (fails >= AUTH_CONFIG.MAX_FAILED_ATTEMPTS) {
+          cache.put(lockKey, 'locked', AUTH_CONFIG.LOCKOUT_DURATION_SECONDS);
+          cache.remove(failKey);
+          return { isLocked: true };
+        } else {
+          cache.put(failKey, String(fails), AUTH_CONFIG.LOCKOUT_DURATION_SECONDS);
+        }
+      } catch (e) {}
+    } else {
+      fails = (parseInt(_localMemoryCache.get(failKey) || '0', 10) || 0) + 1;
+      if (fails >= AUTH_CONFIG.MAX_FAILED_ATTEMPTS) {
+        _localMemoryCache.set(lockKey, 'locked');
+        _localMemoryCache.delete(failKey);
+        return { isLocked: true };
+      } else {
+        _localMemoryCache.set(failKey, String(fails));
+      }
+    }
+    return { isLocked: false, attempts: fails };
+  },
+
+  clearFailure: function(cleanUsername) {
+    if (!cleanUsername) return;
+    const failKey = 'login_fails_' + cleanUsername;
+    const lockKey = 'login_lock_' + cleanUsername;
+    if (typeof CacheService !== 'undefined') {
+      try {
+        const cache = CacheService.getScriptCache();
+        cache.remove(failKey);
+        cache.remove(lockKey);
+      } catch (e) {}
+    } else {
+      _localMemoryCache.delete(failKey);
+      _localMemoryCache.delete(lockKey);
+    }
+  }
+};
 
 // Cache in-memory lokal untuk pengujian Node.js ketika CacheService belum tersedia
 const _localMemoryCache = new Map();
@@ -39,7 +133,7 @@ const _localMemoryCache = new Map();
  * @param {string} str
  * @return {Uint8Array}
  */
-function utf8ToBytes(str) {
+function utf8ToBytes_(str) {
   if (typeof TextEncoder !== 'undefined') {
     return new TextEncoder().encode(str);
   }
@@ -66,7 +160,7 @@ function utf8ToBytes(str) {
   return new Uint8Array(bytes);
 }
 
-function rotr32(n, x) {
+function rotr32_(n, x) {
   return (x >>> n) | (x << (32 - n));
 }
 
@@ -81,7 +175,7 @@ const K_SHA256 = new Uint32Array([
   0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
 ]);
 
-function rawSha256(dataBytes) {
+function rawSha256_(dataBytes) {
   const bitLen = dataBytes.length * 8;
   const padLen = (dataBytes.length + 9 + 63) & ~63;
   const padded = new Uint8Array(padLen);
@@ -101,17 +195,17 @@ function rawSha256(dataBytes) {
       w[i] = view.getUint32(offset + (i * 4));
     }
     for (let i = 16; i < 64; i++) {
-      const s0 = rotr32(7, w[i - 15]) ^ rotr32(18, w[i - 15]) ^ (w[i - 15] >>> 3);
-      const s1 = rotr32(17, w[i - 2]) ^ rotr32(19, w[i - 2]) ^ (w[i - 2] >>> 10);
+      const s0 = rotr32_(7, w[i - 15]) ^ rotr32_(18, w[i - 15]) ^ (w[i - 15] >>> 3);
+      const s1 = rotr32_(17, w[i - 2]) ^ rotr32_(19, w[i - 2]) ^ (w[i - 2] >>> 10);
       w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0;
     }
 
     let a = h0, b = h1, c = h2, d = h3, e = h4, f = h5, g = h6, h = h7;
     for (let i = 0; i < 64; i++) {
-      const S1 = rotr32(6, e) ^ rotr32(11, e) ^ rotr32(25, e);
+      const S1 = rotr32_(6, e) ^ rotr32_(11, e) ^ rotr32_(25, e);
       const ch = (e & f) ^ ((~e) & g);
       const temp1 = (h + S1 + ch + K_SHA256[i] + w[i]) | 0;
-      const S0 = rotr32(2, a) ^ rotr32(13, a) ^ rotr32(22, a);
+      const S0 = rotr32_(2, a) ^ rotr32_(13, a) ^ rotr32_(22, a);
       const maj = (a & b) ^ (a & c) ^ (b & c);
       const temp2 = (S0 + maj) | 0;
 
@@ -132,10 +226,10 @@ function rawSha256(dataBytes) {
   return out;
 }
 
-function rawHmacSha256(keyBytes, msgBytes) {
+function rawHmacSha256_(keyBytes, msgBytes) {
   let k = keyBytes;
   if (k.length > 64) {
-    k = rawSha256(k);
+    k = rawSha256_(k);
   }
 
   const ipad = new Uint8Array(64);
@@ -149,12 +243,12 @@ function rawHmacSha256(keyBytes, msgBytes) {
   const innerBuf = new Uint8Array(64 + msgBytes.length);
   innerBuf.set(ipad, 0);
   innerBuf.set(msgBytes, 64);
-  const innerHash = rawSha256(innerBuf);
+  const innerHash = rawSha256_(innerBuf);
 
   const outerBuf = new Uint8Array(64 + 32);
   outerBuf.set(opad, 0);
   outerBuf.set(innerHash, 64);
-  return rawSha256(outerBuf);
+  return rawSha256_(outerBuf);
 }
 
 /**
@@ -165,12 +259,12 @@ function rawHmacSha256(keyBytes, msgBytes) {
  * @param {number} dkLen
  * @return {string} Hexadecimal string lowercase
  */
-function computePBKDF2(password, salt, iterations, dkLen) {
+function computePBKDF2_(password, salt, iterations, dkLen) {
   if (iterations <= 0 || dkLen <= 0) {
     throw new Error('Iterasi dan dkLen harus bilangan positif.');
   }
-  const pBytes = utf8ToBytes(password);
-  const sBytes = utf8ToBytes(salt);
+  const pBytes = utf8ToBytes_(password);
+  const sBytes = utf8ToBytes_(salt);
   const hLen = 32;
   const l = Math.ceil(dkLen / hLen);
   const r = dkLen - (l - 1) * hLen;
@@ -184,11 +278,11 @@ function computePBKDF2(password, salt, iterations, dkLen) {
     sInt[sBytes.length + 2] = (i >>> 8) & 0xff;
     sInt[sBytes.length + 3] = i & 0xff;
 
-    let u = rawHmacSha256(pBytes, sInt);
+    let u = rawHmacSha256_(pBytes, sInt);
     const t = new Uint8Array(u);
 
     for (let c = 1; c < iterations; c++) {
-      u = rawHmacSha256(pBytes, u);
+      u = rawHmacSha256_(pBytes, u);
       for (let k = 0; k < hLen; k++) {
         t[k] ^= u[k];
       }
@@ -213,7 +307,7 @@ function computePBKDF2(password, salt, iterations, dkLen) {
  * minimum rekomendasi keamanan industri/OWASP (128 bit).
  * @return {string}
  */
-function generateSecureSalt() {
+function generateSecureSalt_() {
   if (typeof Utilities !== 'undefined' && typeof Utilities.getUuid === 'function') {
     const u1 = Utilities.getUuid().replace(/-/g, '');
     const u2 = Utilities.getUuid().replace(/-/g, '');
@@ -243,9 +337,9 @@ function generateSecureSalt() {
  * @param {number} [iterations]
  * @return {string}
  */
-function hashPasswordPBKDF2(password, salt, iterations) {
+function hashPasswordPBKDF2_(password, salt, iterations) {
   const iter = iterations || AUTH_CONFIG.ITERATIONS;
-  const derivedHex = computePBKDF2(password, salt, iter, AUTH_CONFIG.DK_LEN);
+  const derivedHex = computePBKDF2_(password, salt, iter, AUTH_CONFIG.DK_LEN);
   return 'pbkdf2:sha256:' + iter + ':' + derivedHex;
 }
 
@@ -255,7 +349,7 @@ function hashPasswordPBKDF2(password, salt, iterations) {
  * @param {string} b
  * @return {boolean}
  */
-function constantTimeCompare(a, b) {
+function constantTimeCompare_(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) {
     return false;
   }
@@ -275,7 +369,7 @@ function constantTimeCompare(a, b) {
  * @param {string} storedSalt
  * @return {{ valid: boolean, needsRehash: boolean }}
  */
-function verifyPassword(passwordPlaintext, storedHash, storedSalt) {
+function verifyPassword_(passwordPlaintext, storedHash, storedSalt) {
   if (!passwordPlaintext || !storedHash) {
     return { valid: false, needsRehash: false };
   }
@@ -294,16 +388,16 @@ function verifyPassword(passwordPlaintext, storedHash, storedSalt) {
       return { valid: false, needsRehash: false };
     }
 
-    const calculatedHex = computePBKDF2(passwordPlaintext, storedSalt || '', iter, expectedHex.length / 2);
-    const isValid = constantTimeCompare(calculatedHex, expectedHex);
+    const calculatedHex = computePBKDF2_(passwordPlaintext, storedSalt || '', iter, expectedHex.length / 2);
+    const isValid = constantTimeCompare_(calculatedHex, expectedHex);
     return { valid: isValid, needsRehash: false };
   }
 
   // Kasus 2: Format Legacy SHA-256 + Salt (Hex 64 karakter dari Phase 1)
   if (/^[a-f0-9]{64}$/i.test(storedHash)) {
     let legacyHash = '';
-    if (typeof hashPasswordWithSalt === 'function') {
-      legacyHash = hashPasswordWithSalt(passwordPlaintext, storedSalt || '');
+    if (typeof hashPasswordWithSalt_ === 'function') {
+      legacyHash = hashPasswordWithSalt_(passwordPlaintext, storedSalt || '');
     } else if (typeof Utilities !== 'undefined' && typeof Utilities.computeDigest === 'function') {
       const combined = passwordPlaintext + ':' + (storedSalt || '');
       const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, combined, Utilities.Charset.UTF_8);
@@ -316,7 +410,7 @@ function verifyPassword(passwordPlaintext, storedHash, storedSalt) {
       legacyHash = crypto.createHash('sha256').update(passwordPlaintext + ':' + (storedSalt || ''), 'utf8').digest('hex');
     }
 
-    const isValid = constantTimeCompare(legacyHash.toLowerCase(), storedHash.toLowerCase());
+    const isValid = constantTimeCompare_(legacyHash.toLowerCase(), storedHash.toLowerCase());
     return { valid: isValid, needsRehash: isValid };
   }
 
@@ -331,7 +425,7 @@ function verifyPassword(passwordPlaintext, storedHash, storedSalt) {
 /**
  * Adapter pembacaan dan penulisan cache sesi.
  */
-const SessionStore = {
+const SessionStore_ = {
   get: function(token) {
     if (typeof CacheService !== 'undefined') {
       const cache = CacheService.getScriptCache();
@@ -371,14 +465,14 @@ const SessionStore = {
  * @param {Object} userRecord
  * @return {string} sessionToken (UUID v4)
  */
-function createSession(userRecord) {
+function createSession_(userRecord) {
   let token = '';
   if (typeof Utilities !== 'undefined' && typeof Utilities.getUuid === 'function') {
     token = Utilities.getUuid();
   } else if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     token = crypto.randomUUID();
-  } else if (typeof generateUUID === 'function') {
-    token = generateUUID();
+  } else if (typeof generateUUID_ === 'function') {
+    token = generateUUID_();
   } else {
     token = 'sess_' + Math.random().toString(36).substring(2) + Date.now().toString(36);
   }
@@ -392,7 +486,7 @@ function createSession(userRecord) {
     createdAt: Date.now()
   };
 
-  SessionStore.set(token, sessionData, AUTH_CONFIG.SESSION_TTL_SECONDS);
+  SessionStore_.set(token, sessionData, AUTH_CONFIG.SESSION_TTL_SECONDS);
   return token;
 }
 
@@ -401,9 +495,9 @@ function createSession(userRecord) {
  * @param {string} token
  * @return {Object|null}
  */
-function getActiveSession(token) {
+function getActiveSession_(token) {
   if (!token || typeof token !== 'string') return null;
-  return SessionStore.get(token);
+  return SessionStore_.get(token);
 }
 
 /**
@@ -411,9 +505,9 @@ function getActiveSession(token) {
  * @param {string} token
  * @return {boolean}
  */
-function destroySession(token) {
+function destroySession_(token) {
   if (!token || typeof token !== 'string') return false;
-  SessionStore.remove(token);
+  SessionStore_.remove(token);
   return true;
 }
 
@@ -426,9 +520,9 @@ function destroySession(token) {
  * @param {string} sheetName
  * @return {{ headers: string[], rows: Object[], rawValues: any[][] }}
  */
-function getSheetDataBatch(sheetName) {
-  const ss = (typeof getTargetSpreadsheet === 'function')
-    ? getTargetSpreadsheet()
+function getSheetDataBatch_(sheetName) {
+  const ss = (typeof getTargetSpreadsheet_ === 'function')
+    ? getTargetSpreadsheet_()
     : (typeof SpreadsheetApp !== 'undefined' ? SpreadsheetApp.getActiveSpreadsheet() : null);
 
   if (!ss) {
@@ -466,7 +560,7 @@ function getSheetDataBatch(sheetName) {
 /**
  * Standar wrapper response API JSON.
  */
-function buildResponse(success, data, message) {
+function buildResponse_(success, data, message) {
   return {
     success: !!success,
     data: data || null,
@@ -477,7 +571,7 @@ function buildResponse(success, data, message) {
 /**
  * Helper pembangkit ID UUID v4 stabil.
  */
-function getStableUUID() {
+function getStableUUID_() {
   if (typeof Utilities !== 'undefined' && typeof Utilities.getUuid === 'function') {
     return Utilities.getUuid();
   }
@@ -497,9 +591,9 @@ function getStableUUID() {
  * @param {Object} rowObject
  * @return {boolean}
  */
-function appendSheetRow(sheetName, rowObject) {
-  const ss = (typeof getTargetSpreadsheet === 'function')
-    ? getTargetSpreadsheet()
+function appendSheetRow_(sheetName, rowObject) {
+  const ss = (typeof getTargetSpreadsheet_ === 'function')
+    ? getTargetSpreadsheet_()
     : (typeof SpreadsheetApp !== 'undefined' ? SpreadsheetApp.getActiveSpreadsheet() : null);
 
   if (!ss) throw new Error('Spreadsheet target tidak dapat diakses.');
@@ -531,9 +625,9 @@ function appendSheetRow(sheetName, rowObject) {
  * @param {Object} updateFields
  * @return {boolean}
  */
-function updateSheetRow(sheetName, rowIndex, updateFields) {
-  const ss = (typeof getTargetSpreadsheet === 'function')
-    ? getTargetSpreadsheet()
+function updateSheetRow_(sheetName, rowIndex, updateFields) {
+  const ss = (typeof getTargetSpreadsheet_ === 'function')
+    ? getTargetSpreadsheet_()
     : (typeof SpreadsheetApp !== 'undefined' ? SpreadsheetApp.getActiveSpreadsheet() : null);
 
   if (!ss) throw new Error('Spreadsheet target tidak dapat diakses.');
@@ -561,9 +655,9 @@ function updateSheetRow(sheetName, rowIndex, updateFields) {
  * @param {number} rowIndex (1-indexed)
  * @return {boolean}
  */
-function deleteSheetRow(sheetName, rowIndex) {
-  const ss = (typeof getTargetSpreadsheet === 'function')
-    ? getTargetSpreadsheet()
+function deleteSheetRow_(sheetName, rowIndex) {
+  const ss = (typeof getTargetSpreadsheet_ === 'function')
+    ? getTargetSpreadsheet_()
     : (typeof SpreadsheetApp !== 'undefined' ? SpreadsheetApp.getActiveSpreadsheet() : null);
 
   if (!ss) throw new Error('Spreadsheet target tidak dapat diakses.');
@@ -591,39 +685,62 @@ function deleteSheetRow(sheetName, rowIndex) {
 function apiLogin(username, password) {
   try {
     if (!username || !password || typeof username !== 'string' || typeof password !== 'string') {
-      return buildResponse(false, null, AUTH_CONFIG.GENERIC_AUTH_ERROR);
+      return buildResponse_(false, null, AUTH_CONFIG.GENERIC_AUTH_ERROR);
     }
 
     const cleanUsername = username.trim().toLowerCase();
     const cleanPassword = password;
 
     if (cleanUsername === '' || cleanPassword === '') {
-      return buildResponse(false, null, AUTH_CONFIG.GENERIC_AUTH_ERROR);
+      return buildResponse_(false, null, AUTH_CONFIG.GENERIC_AUTH_ERROR);
     }
 
-    const userData = getSheetDataBatch('user');
+    // 1. Pemeriksaan mitigasi burst global (mencegah DoS massal multi-username)
+    const burstCheck = LoginThrottle_.checkGlobalBurst();
+    if (burstCheck.limited) {
+      return buildResponse_(false, null, burstCheck.message);
+    }
+
+    // 2. Pemeriksaan status lockout per-username sebelum membaca DB / eksekusi PBKDF2
+    const lockoutCheck = LoginThrottle_.getLockoutStatus(cleanUsername);
+    if (lockoutCheck.isLocked) {
+      return buildResponse_(false, null, lockoutCheck.message);
+    }
+
+    const userData = getSheetDataBatch_('user');
     const userRow = userData.rows.find(function(u) {
       return String(u.username || '').trim().toLowerCase() === cleanUsername;
     });
 
-    // Jika username tidak ditemukan, gunakan pesan umum untuk cegah user enumeration
+    // Jika username tidak ditemukan, catat kegagalan dan cegah user enumeration
     if (!userRow) {
-      return buildResponse(false, null, AUTH_CONFIG.GENERIC_AUTH_ERROR);
+      const rec = LoginThrottle_.recordFailure(cleanUsername);
+      if (rec.isLocked) {
+        return buildResponse_(false, null, AUTH_CONFIG.LOCKOUT_ERROR);
+      }
+      return buildResponse_(false, null, AUTH_CONFIG.GENERIC_AUTH_ERROR);
     }
 
     // Periksa status aktif user
     if (userRow.is_active === false || String(userRow.is_active).toLowerCase() === 'false') {
-      return buildResponse(false, null, AUTH_CONFIG.INACTIVE_USER_ERROR);
+      return buildResponse_(false, null, AUTH_CONFIG.INACTIVE_USER_ERROR);
     }
 
     // Verifikasi hash password
-    const verifyResult = verifyPassword(cleanPassword, String(userRow.password_hash || ''), String(userRow.password_salt || ''));
+    const verifyResult = verifyPassword_(cleanPassword, String(userRow.password_hash || ''), String(userRow.password_salt || ''));
     if (!verifyResult.valid) {
-      return buildResponse(false, null, AUTH_CONFIG.GENERIC_AUTH_ERROR);
+      const rec = LoginThrottle_.recordFailure(cleanUsername);
+      if (rec.isLocked) {
+        return buildResponse_(false, null, AUTH_CONFIG.LOCKOUT_ERROR);
+      }
+      return buildResponse_(false, null, AUTH_CONFIG.GENERIC_AUTH_ERROR);
     }
 
-    const ss = (typeof getTargetSpreadsheet === 'function')
-      ? getTargetSpreadsheet()
+    // Login berhasil: hapus counter kegagalan username
+    LoginThrottle_.clearFailure(cleanUsername);
+
+    const ss = (typeof getTargetSpreadsheet_ === 'function')
+      ? getTargetSpreadsheet_()
       : (typeof SpreadsheetApp !== 'undefined' ? SpreadsheetApp.getActiveSpreadsheet() : null);
 
     const nowIso = new Date().toISOString();
@@ -632,8 +749,8 @@ function apiLogin(username, password) {
     if (verifyResult.needsRehash && ss) {
       try {
         const userSheet = ss.getSheetByName('user');
-        const newSalt = generateSecureSalt();
-        const newHash = hashPasswordPBKDF2(cleanPassword, newSalt);
+        const newSalt = generateSecureSalt_();
+        const newHash = hashPasswordPBKDF2_(cleanPassword, newSalt);
 
         const hashCol = userData.headers.indexOf('password_hash') + 1;
         const saltCol = userData.headers.indexOf('password_salt') + 1;
@@ -668,9 +785,9 @@ function apiLogin(username, password) {
     }
 
     // Buat sesi server-side
-    const sessionToken = createSession(userRow);
+    const sessionToken = createSession_(userRow);
 
-    return buildResponse(true, {
+    return buildResponse_(true, {
       token: sessionToken,
       user: {
         id: userRow.id,
@@ -684,7 +801,7 @@ function apiLogin(username, password) {
     if (typeof Logger !== 'undefined') {
       Logger.log('Kesalahan internal apiLogin: ' + err.message);
     }
-    return buildResponse(false, null, 'Terjadi kesalahan sistem saat memproses login.');
+    return buildResponse_(false, null, 'Terjadi kesalahan sistem saat memproses login.');
   }
 }
 
@@ -695,10 +812,10 @@ function apiLogin(username, password) {
  */
 function apiLogout(sessionToken) {
   try {
-    destroySession(sessionToken);
-    return buildResponse(true, null, 'Berhasil logout.');
+    destroySession_(sessionToken);
+    return buildResponse_(true, null, 'Berhasil logout.');
   } catch (err) {
-    return buildResponse(true, null, 'Sesi telah diakhiri.');
+    return buildResponse_(true, null, 'Sesi telah diakhiri.');
   }
 }
 
@@ -709,20 +826,20 @@ function apiLogout(sessionToken) {
  */
 function apiGetSessionUser(sessionToken) {
   try {
-    const session = getActiveSession(sessionToken);
+    const session = getActiveSession_(sessionToken);
     if (!session) {
-      return buildResponse(false, null, 'Sesi tidak valid atau telah berakhir.');
+      return buildResponse_(false, null, 'Sesi tidak valid atau telah berakhir.');
     }
 
     // Verifikasi bahwa user masih aktif di database
-    const userData = getSheetDataBatch('user');
+    const userData = getSheetDataBatch_('user');
     const userRow = userData.rows.find(u => u.id === session.userId);
     if (!userRow || userRow.is_active === false || String(userRow.is_active).toLowerCase() === 'false') {
-      destroySession(sessionToken);
-      return buildResponse(false, null, AUTH_CONFIG.INACTIVE_USER_ERROR);
+      destroySession_(sessionToken);
+      return buildResponse_(false, null, AUTH_CONFIG.INACTIVE_USER_ERROR);
     }
 
-    return buildResponse(true, {
+    return buildResponse_(true, {
       id: userRow.id,
       nama: userRow.nama,
       username: userRow.username,
@@ -730,7 +847,7 @@ function apiGetSessionUser(sessionToken) {
       foto: userRow.foto || ''
     }, 'Sesi aktif.');
   } catch (err) {
-    return buildResponse(false, null, 'Gagal memvalidasi sesi.');
+    return buildResponse_(false, null, 'Gagal memvalidasi sesi.');
   }
 }
 
@@ -740,18 +857,18 @@ function apiGetSessionUser(sessionToken) {
  * @param {string} [requiredRole] 'kepala_sekolah' | 'wali_kelas'
  * @return {Object} sessionUser
  */
-function requireAuth(sessionToken, requiredRole) {
-  const session = getActiveSession(sessionToken);
+function requireAuth_(sessionToken, requiredRole) {
+  const session = getActiveSession_(sessionToken);
   if (!session) {
     throw new Error('Akses ditolak: Sesi tidak valid atau telah kedaluwarsa.');
   }
 
   // Verifikasi status user terkini dari database
-  const userData = getSheetDataBatch('user');
+  const userData = getSheetDataBatch_('user');
   const userRow = userData.rows.find(u => u.id === session.userId);
 
   if (!userRow || userRow.is_active === false || String(userRow.is_active).toLowerCase() === 'false') {
-    destroySession(sessionToken);
+    destroySession_(sessionToken);
     throw new Error(AUTH_CONFIG.INACTIVE_USER_ERROR);
   }
 
@@ -784,7 +901,7 @@ function requireAuth(sessionToken, requiredRole) {
  */
 function apiGetInitialDashboard(sessionToken) {
   try {
-    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    const user = requireAuth_(sessionToken, ['kepala_sekolah', 'wali_kelas']);
 
     // 1. Profil Sekolah (Sheet pengaturan)
     let schoolProfile = {
@@ -794,7 +911,7 @@ function apiGetInitialDashboard(sessionToken) {
       logoSekolah: ''
     };
     try {
-      const pengData = getSheetDataBatch('pengaturan');
+      const pengData = getSheetDataBatch_('pengaturan');
       if (pengData.rows.length > 0) {
         const row = pengData.rows[0];
         schoolProfile.namaSekolah = row.nama_sekolah || '';
@@ -809,7 +926,7 @@ function apiGetInitialDashboard(sessionToken) {
     // 2. Tahun Ajaran Aktif (Sheet tahun_ajaran)
     let activeYear = null;
     try {
-      const taData = getSheetDataBatch('tahun_ajaran');
+      const taData = getSheetDataBatch_('tahun_ajaran');
       const foundTa = taData.rows.find(ta => ta.is_active === true || String(ta.is_active).toLowerCase() === 'true');
       if (foundTa) {
         activeYear = {
@@ -826,7 +943,7 @@ function apiGetInitialDashboard(sessionToken) {
     // 3. Pengumuman Terbaru
     let recentAnnouncements = [];
     try {
-      const pData = getSheetDataBatch('pengumuman');
+      const pData = getSheetDataBatch_('pengumuman');
       recentAnnouncements = pData.rows
         .map(p => ({
           id: p.id,
@@ -870,12 +987,12 @@ function apiGetInitialDashboard(sessionToken) {
       let rkData = { rows: [] };
 
       try {
-        uData = getSheetDataBatch('user');
+        uData = getSheetDataBatch_('user');
         totalGuru = uData.rows.filter(u => u.role === 'wali_kelas' && (u.is_active === true || String(u.is_active).toLowerCase() === 'true')).length;
       } catch (e) {}
 
       try {
-        wkData = getSheetDataBatch('wali_kelas');
+        wkData = getSheetDataBatch_('wali_kelas');
         if (activeYear) {
           totalKelasDitugaskan = wkData.rows.filter(w => w.tahun_ajaran_id === activeYear.id && (w.is_active === true || String(w.is_active).toLowerCase() === 'true')).length;
         } else {
@@ -884,14 +1001,14 @@ function apiGetInitialDashboard(sessionToken) {
       } catch (e) {}
 
       try {
-        sData = getSheetDataBatch('siswa');
+        sData = getSheetDataBatch_('siswa');
         totalSiswa = sData.rows.filter(s => s.is_active !== false && String(s.is_active).toLowerCase() !== 'false').length;
       } catch (e) {}
 
-      try { mData = getSheetDataBatch('mata_pelajaran'); } catch (e) {}
-      try { nData = getSheetDataBatch('nilai_mata_pelajaran'); } catch (e) {}
-      try { skData = getSheetDataBatch('nilai_sikap'); } catch (e) {}
-      try { rkData = getSheetDataBatch('rekap_kehadiran'); } catch (e) {}
+      try { mData = getSheetDataBatch_('mata_pelajaran'); } catch (e) {}
+      try { nData = getSheetDataBatch_('nilai_mata_pelajaran'); } catch (e) {}
+      try { skData = getSheetDataBatch_('nilai_sikap'); } catch (e) {}
+      try { rkData = getSheetDataBatch_('rekap_kehadiran'); } catch (e) {}
 
       // Breakdown 6 kelas (Kelas 1 - Kelas 6) untuk Kepala Sekolah
       const kelasOverview = [];
@@ -1016,7 +1133,7 @@ function apiGetInitialDashboard(sessionToken) {
       let penugasanAktif = null;
 
       try {
-        const wkData = getSheetDataBatch('wali_kelas');
+        const wkData = getSheetDataBatch_('wali_kelas');
         const assignment = wkData.rows.find(w =>
           w.user_id === user.id &&
           (activeYear ? w.tahun_ajaran_id === activeYear.id : true) &&
@@ -1030,18 +1147,18 @@ function apiGetInitialDashboard(sessionToken) {
             tahunAjaranId: assignment.tahun_ajaran_id
           };
 
-          const sData = getSheetDataBatch('siswa');
+          const sData = getSheetDataBatch_('siswa');
           let mData = { rows: [] };
           let nData = { rows: [] };
           let skData = { rows: [] };
           let rkData = { rows: [] };
           let prData = { rows: [] };
 
-          try { mData = getSheetDataBatch('mata_pelajaran'); } catch (e) {}
-          try { nData = getSheetDataBatch('nilai_mata_pelajaran'); } catch (e) {}
-          try { skData = getSheetDataBatch('nilai_sikap'); } catch (e) {}
-          try { rkData = getSheetDataBatch('rekap_kehadiran'); } catch (e) {}
-          try { prData = getSheetDataBatch('pengaturan_rapor'); } catch (e) {}
+          try { mData = getSheetDataBatch_('mata_pelajaran'); } catch (e) {}
+          try { nData = getSheetDataBatch_('nilai_mata_pelajaran'); } catch (e) {}
+          try { skData = getSheetDataBatch_('nilai_sikap'); } catch (e) {}
+          try { rkData = getSheetDataBatch_('rekap_kehadiran'); } catch (e) {}
+          try { prData = getSheetDataBatch_('pengaturan_rapor'); } catch (e) {}
 
           const activeSiswa = sData.rows.filter(s =>
             s.wali_kelas_id === assignment.id &&
@@ -1072,7 +1189,7 @@ function apiGetInitialDashboard(sessionToken) {
           const isRaporReady = (nilaiPct === 100 && sikapPct === 100 && kehadiranPct === 100 && activeSiswa.length > 0 && activeMapels.length > 0);
 
           // Hitung ranking kompetisi untuk top 3 ranking dashboard
-          const rankingRes = calculateClassRanking(assignment.id, { sData, mData, nData, prData, wkData });
+          const rankingRes = calculateClassRanking_(assignment.id, { sData, mData, nData, prData, wkData });
           const topRanking = (rankingRes.rankedStudents || []).slice(0, 3).map(st => ({
             rank: st.rank,
             nama: st.nama,
@@ -1125,9 +1242,9 @@ function apiGetInitialDashboard(sessionToken) {
       }
     }
 
-    return buildResponse(true, payload, 'Data dashboard awal berhasil dimuat.');
+    return buildResponse_(true, payload, 'Data dashboard awal berhasil dimuat.');
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal memuat dashboard.');
+    return buildResponse_(false, null, err.message || 'Gagal memuat dashboard.');
   }
 }
 
@@ -1143,12 +1260,12 @@ function apiGetInitialDashboard(sessionToken) {
  */
 function apiGetTahunAjaranList(sessionToken) {
   try {
-    requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    requireAuth_(sessionToken, ['kepala_sekolah', 'wali_kelas']);
 
-    const taData = getSheetDataBatch('tahun_ajaran');
+    const taData = getSheetDataBatch_('tahun_ajaran');
     let wkData = { rows: [] };
     try {
-      wkData = getSheetDataBatch('wali_kelas');
+      wkData = getSheetDataBatch_('wali_kelas');
     } catch (e) {}
 
     const result = taData.rows.map(t => {
@@ -1170,9 +1287,9 @@ function apiGetTahunAjaranList(sessionToken) {
     // Urutkan tanggal_mulai descending
     result.sort((a, b) => (b.tanggal_mulai || '').localeCompare(a.tanggal_mulai || ''));
 
-    return buildResponse(true, result, 'Daftar tahun ajaran berhasil dimuat.');
+    return buildResponse_(true, result, 'Daftar tahun ajaran berhasil dimuat.');
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal memuat daftar tahun ajaran.');
+    return buildResponse_(false, null, err.message || 'Gagal memuat daftar tahun ajaran.');
   }
 }
 
@@ -1185,15 +1302,15 @@ function apiGetTahunAjaranList(sessionToken) {
  */
 function apiSaveTahunAjaran(sessionToken, payload) {
   let lock = null;
-  if (typeof LockService !== 'undefined') {
-    lock = LockService.getScriptLock();
-    lock.waitLock(30000);
-  }
   try {
-    requireAuth(sessionToken, 'kepala_sekolah');
+    if (typeof LockService !== 'undefined') {
+      lock = LockService.getScriptLock();
+      lock.waitLock(30000);
+    }
+    requireAuth_(sessionToken, 'kepala_sekolah');
 
     if (!payload || typeof payload !== 'object') {
-      return buildResponse(false, null, 'Data tahun ajaran tidak valid.');
+      return buildResponse_(false, null, 'Data tahun ajaran tidak valid.');
     }
 
     const cleanTahunAjaran = String(payload.tahun_ajaran || '').trim();
@@ -1205,39 +1322,39 @@ function apiSaveTahunAjaran(sessionToken, payload) {
     const editId = payload.id ? String(payload.id).trim() : null;
 
     if (!cleanTahunAjaran || !cleanSemester || !cleanTglMulai || !cleanTglSelesai) {
-      return buildResponse(false, null, 'Seluruh field (Tahun Ajaran, Semester, Tanggal Mulai, Tanggal Selesai) wajib diisi.');
+      return buildResponse_(false, null, 'Seluruh field (Tahun Ajaran, Semester, Tanggal Mulai, Tanggal Selesai) wajib diisi.');
     }
 
     // Validasi format tahun ajaran YYYY/YYYY dengan selisih 1 tahun
     if (!/^\d{4}\/\d{4}$/.test(cleanTahunAjaran)) {
-      return buildResponse(false, null, 'Format tahun ajaran harus YYYY/YYYY (contoh: 2026/2027).');
+      return buildResponse_(false, null, 'Format tahun ajaran harus YYYY/YYYY (contoh: 2026/2027).');
     }
     const [y1, y2] = cleanTahunAjaran.split('/').map(Number);
     if (y2 !== y1 + 1) {
-      return buildResponse(false, null, 'Tahun kedua harus berurutan tepat satu tahun setelah tahun pertama (contoh: 2026/2027).');
+      return buildResponse_(false, null, 'Tahun kedua harus berurutan tepat satu tahun setelah tahun pertama (contoh: 2026/2027).');
     }
 
     // Validasi semester
     if (cleanSemester !== 'Ganjil' && cleanSemester !== 'Genap') {
-      return buildResponse(false, null, 'Semester harus salah satu dari: Ganjil atau Genap.');
+      return buildResponse_(false, null, 'Semester harus salah satu dari: Ganjil atau Genap.');
     }
 
     // Validasi tanggal
     const startTimestamp = Date.parse(cleanTglMulai);
     const endTimestamp = Date.parse(cleanTglSelesai);
     if (isNaN(startTimestamp) || isNaN(endTimestamp)) {
-      return buildResponse(false, null, 'Format tanggal mulai atau tanggal selesai tidak valid.');
+      return buildResponse_(false, null, 'Format tanggal mulai atau tanggal selesai tidak valid.');
     }
     if (endTimestamp <= startTimestamp) {
-      return buildResponse(false, null, 'Tanggal selesai harus setelah tanggal mulai.');
+      return buildResponse_(false, null, 'Tanggal selesai harus setelah tanggal mulai.');
     }
 
     // Periode yang terkunci tidak boleh diaktifkan
     if (isLocked && isActive) {
-      return buildResponse(false, null, 'Periode yang dikunci tidak dapat dijadikan periode aktif.');
+      return buildResponse_(false, null, 'Periode yang dikunci tidak dapat dijadikan periode aktif.');
     }
 
-    const allTa = getSheetDataBatch('tahun_ajaran');
+    const allTa = getSheetDataBatch_('tahun_ajaran');
 
     // Validasi keunikan kombinasi tahun_ajaran + semester
     const duplicate = allTa.rows.find(t =>
@@ -1246,7 +1363,7 @@ function apiSaveTahunAjaran(sessionToken, payload) {
       (!editId || t.id !== editId)
     );
     if (duplicate) {
-      return buildResponse(false, null, 'Kombinasi Tahun Ajaran ' + cleanTahunAjaran + ' dan Semester ' + cleanSemester + ' sudah terdaftar.');
+      return buildResponse_(false, null, 'Kombinasi Tahun Ajaran ' + cleanTahunAjaran + ' dan Semester ' + cleanSemester + ' sudah terdaftar.');
     }
 
     const nowIso = new Date().toISOString();
@@ -1255,7 +1372,7 @@ function apiSaveTahunAjaran(sessionToken, payload) {
       // Edit data yang ada
       const existingRow = allTa.rows.find(t => t.id === editId);
       if (!existingRow) {
-        return buildResponse(false, null, 'Data tahun ajaran yang akan diedit tidak ditemukan.');
+        return buildResponse_(false, null, 'Data tahun ajaran yang akan diedit tidak ditemukan.');
       }
 
       // Jika sudah dikunci, batasi perubahan
@@ -1263,19 +1380,19 @@ function apiSaveTahunAjaran(sessionToken, payload) {
       if (existingLocked && !isLocked) {
         // Membuka kunci diperbolehkan oleh kepala sekolah
       } else if (existingLocked) {
-        return buildResponse(false, null, 'Periode ini telah dikunci dan tidak dapat diubah lagi.');
+        return buildResponse_(false, null, 'Periode ini telah dikunci dan tidak dapat diubah lagi.');
       }
 
       // Jika periode ini dijadikan aktif, nonaktifkan periode lain
       if (isActive) {
         for (const row of allTa.rows) {
           if (row.id !== editId && (row.is_active === true || String(row.is_active).toLowerCase() === 'true')) {
-            updateSheetRow('tahun_ajaran', row._rowIndex, { is_active: false, updated_at: nowIso });
+            updateSheetRow_('tahun_ajaran', row._rowIndex, { is_active: false, updated_at: nowIso });
           }
         }
       }
 
-      updateSheetRow('tahun_ajaran', existingRow._rowIndex, {
+      updateSheetRow_('tahun_ajaran', existingRow._rowIndex, {
         tahun_ajaran: cleanTahunAjaran,
         semester: cleanSemester,
         tanggal_mulai: cleanTglMulai,
@@ -1285,21 +1402,21 @@ function apiSaveTahunAjaran(sessionToken, payload) {
         updated_at: nowIso
       });
 
-      return buildResponse(true, { id: editId }, 'Tahun ajaran berhasil diperbarui.');
+      return buildResponse_(true, { id: editId }, 'Tahun ajaran berhasil diperbarui.');
     } else {
       // Tambah periode baru
-      const newId = getStableUUID();
+      const newId = getStableUUID_();
 
       // Jika periode baru aktif, nonaktifkan periode sebelumnya
       if (isActive) {
         for (const row of allTa.rows) {
           if (row.is_active === true || String(row.is_active).toLowerCase() === 'true') {
-            updateSheetRow('tahun_ajaran', row._rowIndex, { is_active: false, updated_at: nowIso });
+            updateSheetRow_('tahun_ajaran', row._rowIndex, { is_active: false, updated_at: nowIso });
           }
         }
       }
 
-      appendSheetRow('tahun_ajaran', {
+      appendSheetRow_('tahun_ajaran', {
         id: newId,
         tahun_ajaran: cleanTahunAjaran,
         semester: cleanSemester,
@@ -1311,10 +1428,10 @@ function apiSaveTahunAjaran(sessionToken, payload) {
         updated_at: nowIso
       });
 
-      return buildResponse(true, { id: newId }, 'Tahun ajaran baru berhasil ditambahkan.');
+      return buildResponse_(true, { id: newId }, 'Tahun ajaran baru berhasil ditambahkan.');
     }
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal menyimpan tahun ajaran.');
+    return buildResponse_(false, null, err.message || 'Gagal menyimpan tahun ajaran.');
   } finally {
     if (lock) {
       try { lock.releaseLock(); } catch (e) {}
@@ -1331,17 +1448,22 @@ function apiSaveTahunAjaran(sessionToken, payload) {
  * @return {{ success: boolean, data: Object|null, message: string }}
  */
 function apiToggleLockTahunAjaran(sessionToken, tahunAjaranId, isLocked) {
+  let lock = null;
   try {
-    requireAuth(sessionToken, 'kepala_sekolah');
+    if (typeof LockService !== 'undefined') {
+      lock = LockService.getScriptLock();
+      lock.waitLock(30000);
+    }
+    requireAuth_(sessionToken, 'kepala_sekolah');
 
     if (!tahunAjaranId) {
-      return buildResponse(false, null, 'ID tahun ajaran diperlukan.');
+      return buildResponse_(false, null, 'ID tahun ajaran diperlukan.');
     }
 
-    const allTa = getSheetDataBatch('tahun_ajaran');
+    const allTa = getSheetDataBatch_('tahun_ajaran');
     const target = allTa.rows.find(t => t.id === tahunAjaranId);
     if (!target) {
-      return buildResponse(false, null, 'Data tahun ajaran tidak ditemukan.');
+      return buildResponse_(false, null, 'Data tahun ajaran tidak ditemukan.');
     }
 
     const targetLock = !!isLocked;
@@ -1357,12 +1479,16 @@ function apiToggleLockTahunAjaran(sessionToken, tahunAjaranId, isLocked) {
       updateFields.is_active = false;
     }
 
-    updateSheetRow('tahun_ajaran', target._rowIndex, updateFields);
+    updateSheetRow_('tahun_ajaran', target._rowIndex, updateFields);
 
     const msg = targetLock ? 'Periode berhasil dikunci.' : 'Kunci periode berhasil dibuka.';
-    return buildResponse(true, { id: tahunAjaranId, is_locked: targetLock }, msg);
+    return buildResponse_(true, { id: tahunAjaranId, is_locked: targetLock }, msg);
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal memperbarui status kunci periode.');
+    return buildResponse_(false, null, err.message || 'Gagal memperbarui status kunci periode.');
+  } finally {
+    if (lock) {
+      try { lock.releaseLock(); } catch (e) {}
+    }
   }
 }
 
@@ -1374,45 +1500,54 @@ function apiToggleLockTahunAjaran(sessionToken, tahunAjaranId, isLocked) {
  * @return {{ success: boolean, data: null, message: string }}
  */
 function apiDeleteTahunAjaran(sessionToken, tahunAjaranId) {
+  let lock = null;
   try {
-    requireAuth(sessionToken, 'kepala_sekolah');
+    if (typeof LockService !== 'undefined') {
+      lock = LockService.getScriptLock();
+      lock.waitLock(30000);
+    }
+    requireAuth_(sessionToken, 'kepala_sekolah');
 
     if (!tahunAjaranId) {
-      return buildResponse(false, null, 'ID tahun ajaran diperlukan.');
+      return buildResponse_(false, null, 'ID tahun ajaran diperlukan.');
     }
 
-    const allTa = getSheetDataBatch('tahun_ajaran');
+    const allTa = getSheetDataBatch_('tahun_ajaran');
     const existing = allTa.rows.find(t => t.id === tahunAjaranId);
     if (!existing) {
-      return buildResponse(false, null, 'Data tahun ajaran tidak ditemukan.');
+      return buildResponse_(false, null, 'Data tahun ajaran tidak ditemukan.');
     }
 
     if (existing.is_active === true || String(existing.is_active).toLowerCase() === 'true') {
-      return buildResponse(false, null, 'Periode yang sedang aktif tidak dapat dihapus. Silakan nonaktifkan atau aktifkan periode lain terlebih dahulu.');
+      return buildResponse_(false, null, 'Periode yang sedang aktif tidak dapat dihapus. Silakan nonaktifkan atau aktifkan periode lain terlebih dahulu.');
     }
 
     // Cek relasi penugasan wali kelas
     try {
-      const wkData = getSheetDataBatch('wali_kelas');
+      const wkData = getSheetDataBatch_('wali_kelas');
       const hasWk = wkData.rows.some(w => w.tahun_ajaran_id === tahunAjaranId);
       if (hasWk) {
-        return buildResponse(false, null, 'Periode ini sudah memiliki data penugasan wali kelas dan tidak dapat dihapus. Silakan gunakan fitur kunci periode.');
+        return buildResponse_(false, null, 'Periode ini sudah memiliki data penugasan wali kelas dan tidak dapat dihapus. Silakan gunakan fitur kunci periode.');
       }
     } catch (e) {}
 
     // Cek relasi pengaturan rapor
     try {
-      const prData = getSheetDataBatch('pengaturan_rapor');
+      const prData = getSheetDataBatch_('pengaturan_rapor');
       const hasPr = prData.rows.some(p => p.tahun_ajaran_id === tahunAjaranId);
       if (hasPr) {
-        return buildResponse(false, null, 'Periode ini sudah memiliki data pengaturan rapor dan tidak dapat dihapus.');
+        return buildResponse_(false, null, 'Periode ini sudah memiliki data pengaturan rapor dan tidak dapat dihapus.');
       }
     } catch (e) {}
 
-    deleteSheetRow('tahun_ajaran', existing._rowIndex);
-    return buildResponse(true, null, 'Tahun ajaran berhasil dihapus.');
+    deleteSheetRow_('tahun_ajaran', existing._rowIndex);
+    return buildResponse_(true, null, 'Tahun ajaran berhasil dihapus.');
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal menghapus tahun ajaran.');
+    return buildResponse_(false, null, err.message || 'Gagal menghapus tahun ajaran.');
+  } finally {
+    if (lock) {
+      try { lock.releaseLock(); } catch (e) {}
+    }
   }
 }
 
@@ -1424,9 +1559,9 @@ function apiDeleteTahunAjaran(sessionToken, tahunAjaranId) {
  */
 function apiGetGuruWaliKelasOptions(sessionToken) {
   try {
-    requireAuth(sessionToken, 'kepala_sekolah');
+    requireAuth_(sessionToken, 'kepala_sekolah');
 
-    const uData = getSheetDataBatch('user');
+    const uData = getSheetDataBatch_('user');
     const teachers = uData.rows
       .filter(u => u.role === 'wali_kelas' && (u.is_active === true || String(u.is_active).toLowerCase() === 'true'))
       .map(u => ({
@@ -1437,9 +1572,9 @@ function apiGetGuruWaliKelasOptions(sessionToken) {
       }));
 
     teachers.sort((a, b) => a.nama.localeCompare(b.nama));
-    return buildResponse(true, teachers, 'Daftar guru wali kelas berhasil dimuat.');
+    return buildResponse_(true, teachers, 'Daftar guru wali kelas berhasil dimuat.');
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal memuat daftar guru.');
+    return buildResponse_(false, null, err.message || 'Gagal memuat daftar guru.');
   }
 }
 
@@ -1452,14 +1587,14 @@ function apiGetGuruWaliKelasOptions(sessionToken) {
  */
 function apiGetPenugasanList(sessionToken, filterTahunAjaranId) {
   try {
-    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    const user = requireAuth_(sessionToken, ['kepala_sekolah', 'wali_kelas']);
 
-    const wkData = getSheetDataBatch('wali_kelas');
-    const uData = getSheetDataBatch('user');
-    const taData = getSheetDataBatch('tahun_ajaran');
+    const wkData = getSheetDataBatch_('wali_kelas');
+    const uData = getSheetDataBatch_('user');
+    const taData = getSheetDataBatch_('tahun_ajaran');
     let sData = { rows: [] };
     try {
-      sData = getSheetDataBatch('siswa');
+      sData = getSheetDataBatch_('siswa');
     } catch (e) {}
 
     let rows = wkData.rows;
@@ -1501,9 +1636,9 @@ function apiGetPenugasanList(sessionToken, filterTahunAjaranId) {
     });
 
     result.sort((a, b) => Number(a.kelas) - Number(b.kelas));
-    return buildResponse(true, result, 'Daftar penugasan berhasil dimuat.');
+    return buildResponse_(true, result, 'Daftar penugasan berhasil dimuat.');
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal memuat daftar penugasan.');
+    return buildResponse_(false, null, err.message || 'Gagal memuat daftar penugasan.');
   }
 }
 
@@ -1516,15 +1651,15 @@ function apiGetPenugasanList(sessionToken, filterTahunAjaranId) {
  */
 function apiSavePenugasan(sessionToken, payload) {
   let lock = null;
-  if (typeof LockService !== 'undefined') {
-    lock = LockService.getScriptLock();
-    lock.waitLock(30000);
-  }
   try {
-    requireAuth(sessionToken, 'kepala_sekolah');
+    if (typeof LockService !== 'undefined') {
+      lock = LockService.getScriptLock();
+      lock.waitLock(30000);
+    }
+    requireAuth_(sessionToken, 'kepala_sekolah');
 
     if (!payload || typeof payload !== 'object') {
-      return buildResponse(false, null, 'Data penugasan tidak valid.');
+      return buildResponse_(false, null, 'Data penugasan tidak valid.');
     }
 
     const cleanUserId = String(payload.user_id || '').trim();
@@ -1534,37 +1669,37 @@ function apiSavePenugasan(sessionToken, payload) {
     const editId = payload.id ? String(payload.id).trim() : null;
 
     if (!cleanUserId || !cleanTahunAjaranId || !cleanKelas) {
-      return buildResponse(false, null, 'Guru wali kelas, tahun ajaran, dan kelas wajib dipilih.');
+      return buildResponse_(false, null, 'Guru wali kelas, tahun ajaran, dan kelas wajib dipilih.');
     }
 
     if (!['1', '2', '3', '4', '5', '6'].includes(cleanKelas)) {
-      return buildResponse(false, null, 'Pilihan kelas harus antara 1 sampai 6.');
+      return buildResponse_(false, null, 'Pilihan kelas harus antara 1 sampai 6.');
     }
 
     // Verifikasi guru
-    const uData = getSheetDataBatch('user');
+    const uData = getSheetDataBatch_('user');
     const teacher = uData.rows.find(u => u.id === cleanUserId);
     if (!teacher) {
-      return buildResponse(false, null, 'Data guru tidak ditemukan di sistem.');
+      return buildResponse_(false, null, 'Data guru tidak ditemukan di sistem.');
     }
     if (teacher.role !== 'wali_kelas') {
-      return buildResponse(false, null, 'Pengguna yang dipilih bukan memiliki role wali kelas.');
+      return buildResponse_(false, null, 'Pengguna yang dipilih bukan memiliki role wali kelas.');
     }
     if (teacher.is_active === false || String(teacher.is_active).toLowerCase() === 'false') {
-      return buildResponse(false, null, 'Guru yang dipilih sedang dalam status nonaktif.');
+      return buildResponse_(false, null, 'Guru yang dipilih sedang dalam status nonaktif.');
     }
 
     // Verifikasi tahun ajaran
-    const taData = getSheetDataBatch('tahun_ajaran');
+    const taData = getSheetDataBatch_('tahun_ajaran');
     const ta = taData.rows.find(t => t.id === cleanTahunAjaranId);
     if (!ta) {
-      return buildResponse(false, null, 'Tahun ajaran tidak ditemukan.');
+      return buildResponse_(false, null, 'Tahun ajaran tidak ditemukan.');
     }
     if (ta.is_locked === true || String(ta.is_locked).toLowerCase() === 'true') {
-      return buildResponse(false, null, 'Tidak dapat menambah atau mengubah penugasan pada tahun ajaran yang telah dikunci.');
+      return buildResponse_(false, null, 'Tidak dapat menambah atau mengubah penugasan pada tahun ajaran yang telah dikunci.');
     }
 
-    const wkData = getSheetDataBatch('wali_kelas');
+    const wkData = getSheetDataBatch_('wali_kelas');
 
     // Cek apakah kelas sudah memiliki wali kelas aktif lain pada periode yang sama
     const duplicateClass = wkData.rows.find(w =>
@@ -1574,7 +1709,7 @@ function apiSavePenugasan(sessionToken, payload) {
       (!editId || w.id !== editId)
     );
     if (duplicateClass && isActive) {
-      return buildResponse(false, null, 'Kelas ' + cleanKelas + ' sudah memiliki wali kelas aktif pada periode ini.');
+      return buildResponse_(false, null, 'Kelas ' + cleanKelas + ' sudah memiliki wali kelas aktif pada periode ini.');
     }
 
     // Cek apakah guru sudah ditugaskan ke kelas lain pada periode yang sama
@@ -1585,7 +1720,7 @@ function apiSavePenugasan(sessionToken, payload) {
       (!editId || w.id !== editId)
     );
     if (duplicateTeacher && isActive) {
-      return buildResponse(false, null, 'Guru ' + teacher.nama + ' sudah ditugaskan mengampu Kelas ' + duplicateTeacher.kelas + ' pada periode ini.');
+      return buildResponse_(false, null, 'Guru ' + teacher.nama + ' sudah ditugaskan mengampu Kelas ' + duplicateTeacher.kelas + ' pada periode ini.');
     }
 
     const nowIso = new Date().toISOString();
@@ -1593,19 +1728,19 @@ function apiSavePenugasan(sessionToken, payload) {
     if (editId) {
       const existingWk = wkData.rows.find(w => w.id === editId);
       if (!existingWk) {
-        return buildResponse(false, null, 'Penugasan yang akan diedit tidak ditemukan.');
+        return buildResponse_(false, null, 'Penugasan yang akan diedit tidak ditemukan.');
       }
-      updateSheetRow('wali_kelas', existingWk._rowIndex, {
+      updateSheetRow_('wali_kelas', existingWk._rowIndex, {
         user_id: cleanUserId,
         tahun_ajaran_id: cleanTahunAjaranId,
         kelas: cleanKelas,
         is_active: isActive,
         updated_at: nowIso
       });
-      return buildResponse(true, { id: editId }, 'Penugasan wali kelas berhasil diperbarui.');
+      return buildResponse_(true, { id: editId }, 'Penugasan wali kelas berhasil diperbarui.');
     } else {
-      const newId = getStableUUID();
-      appendSheetRow('wali_kelas', {
+      const newId = getStableUUID_();
+      appendSheetRow_('wali_kelas', {
         id: newId,
         user_id: cleanUserId,
         tahun_ajaran_id: cleanTahunAjaranId,
@@ -1614,10 +1749,10 @@ function apiSavePenugasan(sessionToken, payload) {
         created_at: nowIso,
         updated_at: nowIso
       });
-      return buildResponse(true, { id: newId }, 'Penugasan wali kelas berhasil ditambahkan.');
+      return buildResponse_(true, { id: newId }, 'Penugasan wali kelas berhasil ditambahkan.');
     }
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal menyimpan penugasan wali kelas.');
+    return buildResponse_(false, null, err.message || 'Gagal menyimpan penugasan wali kelas.');
   } finally {
     if (lock) {
       try { lock.releaseLock(); } catch (e) {}
@@ -1634,19 +1769,24 @@ function apiSavePenugasan(sessionToken, payload) {
  * @return {{ success: boolean, data: Object|null, message: string }}
  */
 function apiToggleStatusPenugasan(sessionToken, penugasanId, isActive) {
+  let lock = null;
   try {
-    requireAuth(sessionToken, 'kepala_sekolah');
+    if (typeof LockService !== 'undefined') {
+      lock = LockService.getScriptLock();
+      lock.waitLock(30000);
+    }
+    requireAuth_(sessionToken, 'kepala_sekolah');
 
-    const wkData = getSheetDataBatch('wali_kelas');
+    const wkData = getSheetDataBatch_('wali_kelas');
     const existingWk = wkData.rows.find(w => w.id === penugasanId);
     if (!existingWk) {
-      return buildResponse(false, null, 'Data penugasan tidak ditemukan.');
+      return buildResponse_(false, null, 'Data penugasan tidak ditemukan.');
     }
 
-    const taData = getSheetDataBatch('tahun_ajaran');
+    const taData = getSheetDataBatch_('tahun_ajaran');
     const ta = taData.rows.find(t => t.id === existingWk.tahun_ajaran_id);
     if (ta && (ta.is_locked === true || String(ta.is_locked).toLowerCase() === 'true')) {
-      return buildResponse(false, null, 'Tidak dapat mengubah status penugasan pada periode yang telah dikunci.');
+      return buildResponse_(false, null, 'Tidak dapat mengubah status penugasan pada periode yang telah dikunci.');
     }
 
     const targetActive = !!isActive;
@@ -1659,7 +1799,7 @@ function apiToggleStatusPenugasan(sessionToken, penugasanId, isActive) {
         (w.is_active === true || String(w.is_active).toLowerCase() === 'true')
       );
       if (conflictClass) {
-        return buildResponse(false, null, 'Kelas ' + existingWk.kelas + ' sudah memiliki wali kelas aktif lain pada periode ini.');
+        return buildResponse_(false, null, 'Kelas ' + existingWk.kelas + ' sudah memiliki wali kelas aktif lain pada periode ini.');
       }
 
       // Cek konflik guru
@@ -1670,20 +1810,24 @@ function apiToggleStatusPenugasan(sessionToken, penugasanId, isActive) {
         (w.is_active === true || String(w.is_active).toLowerCase() === 'true')
       );
       if (conflictTeacher) {
-        return buildResponse(false, null, 'Guru ini sudah memiliki penugasan aktif lain di Kelas ' + conflictTeacher.kelas + ' pada periode ini.');
+        return buildResponse_(false, null, 'Guru ini sudah memiliki penugasan aktif lain di Kelas ' + conflictTeacher.kelas + ' pada periode ini.');
       }
     }
 
     const nowIso = new Date().toISOString();
-    updateSheetRow('wali_kelas', existingWk._rowIndex, {
+    updateSheetRow_('wali_kelas', existingWk._rowIndex, {
       is_active: targetActive,
       updated_at: nowIso
     });
 
     const msg = targetActive ? 'Penugasan berhasil diaktifkan.' : 'Penugasan berhasil dinonaktifkan.';
-    return buildResponse(true, { id: penugasanId, is_active: targetActive }, msg);
+    return buildResponse_(true, { id: penugasanId, is_active: targetActive }, msg);
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal mengubah status penugasan.');
+    return buildResponse_(false, null, err.message || 'Gagal mengubah status penugasan.');
+  } finally {
+    if (lock) {
+      try { lock.releaseLock(); } catch (e) {}
+    }
   }
 }
 
@@ -1695,57 +1839,66 @@ function apiToggleStatusPenugasan(sessionToken, penugasanId, isActive) {
  * @return {{ success: boolean, data: null, message: string }}
  */
 function apiDeletePenugasan(sessionToken, penugasanId) {
+  let lock = null;
   try {
-    requireAuth(sessionToken, 'kepala_sekolah');
+    if (typeof LockService !== 'undefined') {
+      lock = LockService.getScriptLock();
+      lock.waitLock(30000);
+    }
+    requireAuth_(sessionToken, 'kepala_sekolah');
 
     if (!penugasanId) {
-      return buildResponse(false, null, 'ID penugasan diperlukan.');
+      return buildResponse_(false, null, 'ID penugasan diperlukan.');
     }
 
-    const wkData = getSheetDataBatch('wali_kelas');
+    const wkData = getSheetDataBatch_('wali_kelas');
     const existingWk = wkData.rows.find(w => w.id === penugasanId);
     if (!existingWk) {
-      return buildResponse(false, null, 'Data penugasan tidak ditemukan.');
+      return buildResponse_(false, null, 'Data penugasan tidak ditemukan.');
     }
 
     // Periksa status terkunci periode terkait
-    const taData = getSheetDataBatch('tahun_ajaran');
+    const taData = getSheetDataBatch_('tahun_ajaran');
     const ta = taData.rows.find(t => t.id === existingWk.tahun_ajaran_id);
     if (ta && (ta.is_locked === true || String(ta.is_locked).toLowerCase() === 'true')) {
-      return buildResponse(false, null, 'Penugasan pada periode yang telah dikunci tidak dapat dihapus.');
+      return buildResponse_(false, null, 'Penugasan pada periode yang telah dikunci tidak dapat dihapus.');
     }
 
     // Cek apakah penugasan ini sudah memiliki data siswa
     try {
-      const sData = getSheetDataBatch('siswa');
+      const sData = getSheetDataBatch_('siswa');
       const hasStudents = sData.rows.some(s => s.wali_kelas_id === penugasanId);
       if (hasStudents) {
-        return buildResponse(false, null, 'Penugasan ini sudah memiliki data siswa dan tidak boleh dihapus permanen. Silakan nonaktifkan status penugasan.');
+        return buildResponse_(false, null, 'Penugasan ini sudah memiliki data siswa dan tidak boleh dihapus permanen. Silakan nonaktifkan status penugasan.');
       }
     } catch (e) {}
 
     // Cek apakah penugasan ini memiliki data mata pelajaran
     try {
-      const mData = getSheetDataBatch('mata_pelajaran');
+      const mData = getSheetDataBatch_('mata_pelajaran');
       const hasMapel = mData.rows.some(m => m.wali_kelas_id === penugasanId);
       if (hasMapel) {
-        return buildResponse(false, null, 'Penugasan ini sudah memiliki data mata pelajaran dan tidak boleh dihapus permanen.');
+        return buildResponse_(false, null, 'Penugasan ini sudah memiliki data mata pelajaran dan tidak boleh dihapus permanen.');
       }
     } catch (e) {}
 
     // Cek apakah penugasan ini memiliki pengaturan rapor
     try {
-      const prData = getSheetDataBatch('pengaturan_rapor');
+      const prData = getSheetDataBatch_('pengaturan_rapor');
       const hasPr = prData.rows.some(p => p.wali_kelas_id === penugasanId);
       if (hasPr) {
-        return buildResponse(false, null, 'Penugasan ini sudah memiliki pengaturan rapor dan tidak boleh dihapus.');
+        return buildResponse_(false, null, 'Penugasan ini sudah memiliki pengaturan rapor dan tidak boleh dihapus.');
       }
     } catch (e) {}
 
-    deleteSheetRow('wali_kelas', existingWk._rowIndex);
-    return buildResponse(true, null, 'Penugasan wali kelas berhasil dihapus.');
+    deleteSheetRow_('wali_kelas', existingWk._rowIndex);
+    return buildResponse_(true, null, 'Penugasan wali kelas berhasil dihapus.');
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal menghapus penugasan wali kelas.');
+    return buildResponse_(false, null, err.message || 'Gagal menghapus penugasan wali kelas.');
+  } finally {
+    if (lock) {
+      try { lock.releaseLock(); } catch (e) {}
+    }
   }
 }
 
@@ -1764,12 +1917,12 @@ function apiDeletePenugasan(sessionToken, penugasanId) {
  */
 function apiGetUsersList(sessionToken, searchQuery) {
   try {
-    requireAuth(sessionToken, 'kepala_sekolah');
+    requireAuth_(sessionToken, 'kepala_sekolah');
 
-    const uData = getSheetDataBatch('user');
+    const uData = getSheetDataBatch_('user');
     let wkData = { rows: [] };
     try {
-      wkData = getSheetDataBatch('wali_kelas');
+      wkData = getSheetDataBatch_('wali_kelas');
     } catch (e) {}
 
     const cleanQuery = searchQuery ? String(searchQuery).trim().toLowerCase() : '';
@@ -1806,9 +1959,9 @@ function apiGetUsersList(sessionToken, searchQuery) {
       return a.nama.localeCompare(b.nama);
     });
 
-    return buildResponse(true, users, 'Daftar pengguna berhasil dimuat.');
+    return buildResponse_(true, users, 'Daftar pengguna berhasil dimuat.');
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal memuat daftar pengguna.');
+    return buildResponse_(false, null, err.message || 'Gagal memuat daftar pengguna.');
   }
 }
 
@@ -1823,15 +1976,15 @@ function apiGetUsersList(sessionToken, searchQuery) {
  */
 function apiSaveUser(sessionToken, payload) {
   let lock = null;
-  if (typeof LockService !== 'undefined') {
-    lock = LockService.getScriptLock();
-    lock.waitLock(30000);
-  }
   try {
-    const adminUser = requireAuth(sessionToken, 'kepala_sekolah');
+    if (typeof LockService !== 'undefined') {
+      lock = LockService.getScriptLock();
+      lock.waitLock(30000);
+    }
+    const adminUser = requireAuth_(sessionToken, 'kepala_sekolah');
 
     if (!payload || typeof payload !== 'object') {
-      return buildResponse(false, null, 'Data pengguna tidak valid.');
+      return buildResponse_(false, null, 'Data pengguna tidak valid.');
     }
 
     const editId = payload.id ? String(payload.id).trim() : null;
@@ -1844,23 +1997,23 @@ function apiSaveUser(sessionToken, payload) {
     const isActive = payload.is_active === undefined ? true : (payload.is_active === true || String(payload.is_active).toLowerCase() === 'true');
 
     if (!cleanNama) {
-      return buildResponse(false, null, 'Nama lengkap wajib diisi.');
+      return buildResponse_(false, null, 'Nama lengkap wajib diisi.');
     }
     if (!cleanUsername) {
-      return buildResponse(false, null, 'Username wajib diisi.');
+      return buildResponse_(false, null, 'Username wajib diisi.');
     }
     if (cleanUsername.length < 3) {
-      return buildResponse(false, null, 'Username minimal 3 karakter.');
+      return buildResponse_(false, null, 'Username minimal 3 karakter.');
     }
     if (!/^[a-z0-9_.]+$/.test(cleanUsername)) {
-      return buildResponse(false, null, 'Username hanya boleh berupa huruf kecil, angka, garis bawah (_), atau titik (.).');
+      return buildResponse_(false, null, 'Username hanya boleh berupa huruf kecil, angka, garis bawah (_), atau titik (.).');
     }
 
     if (!['kepala_sekolah', 'wali_kelas'].includes(cleanRole)) {
-      return buildResponse(false, null, 'Role harus salah satu dari: kepala_sekolah atau wali_kelas.');
+      return buildResponse_(false, null, 'Role harus salah satu dari: kepala_sekolah atau wali_kelas.');
     }
 
-    const uData = getSheetDataBatch('user');
+    const uData = getSheetDataBatch_('user');
 
     // Validasi keunikan username (case-insensitive)
     const duplicateUser = uData.rows.find(u =>
@@ -1868,7 +2021,7 @@ function apiSaveUser(sessionToken, payload) {
       (!editId || u.id !== editId)
     );
     if (duplicateUser) {
-      return buildResponse(false, null, 'Username "' + cleanUsername + '" sudah digunakan oleh pengguna lain.');
+      return buildResponse_(false, null, 'Username "' + cleanUsername + '" sudah digunakan oleh pengguna lain.');
     }
 
     // Validasi keunikan NIP jika diisi
@@ -1878,7 +2031,7 @@ function apiSaveUser(sessionToken, payload) {
         (!editId || u.id !== editId)
       );
       if (duplicateNip) {
-        return buildResponse(false, null, 'NIP "' + cleanNip + '" sudah terdaftar pada pengguna lain.');
+        return buildResponse_(false, null, 'NIP "' + cleanNip + '" sudah terdaftar pada pengguna lain.');
       }
     }
 
@@ -1888,16 +2041,16 @@ function apiSaveUser(sessionToken, payload) {
       // Edit User yang Ada
       const existingUser = uData.rows.find(u => u.id === editId);
       if (!existingUser) {
-        return buildResponse(false, null, 'Data pengguna tidak ditemukan.');
+        return buildResponse_(false, null, 'Data pengguna tidak ditemukan.');
       }
 
       // Proteksi Admin Lockout: Kepala sekolah tidak boleh menonaktifkan dirinya sendiri atau menurunkan rolenya
       if (adminUser.id === editId) {
         if (!isActive) {
-          return buildResponse(false, null, 'Anda tidak dapat menonaktifkan akun Anda sendiri.');
+          return buildResponse_(false, null, 'Anda tidak dapat menonaktifkan akun Anda sendiri.');
         }
         if (cleanRole !== 'kepala_sekolah') {
-          return buildResponse(false, null, 'Anda tidak dapat mengubah role akun Anda sendiri.');
+          return buildResponse_(false, null, 'Anda tidak dapat mengubah role akun Anda sendiri.');
         }
       }
 
@@ -1914,30 +2067,30 @@ function apiSaveUser(sessionToken, payload) {
       // Jika password baru diisi, perbarui password_hash & password_salt
       if (cleanPassword) {
         if (cleanPassword.length < 6) {
-          return buildResponse(false, null, 'Password baru minimal 6 karakter.');
+          return buildResponse_(false, null, 'Password baru minimal 6 karakter.');
         }
-        const newSalt = generateSecureSalt();
-        const newHash = hashPasswordPBKDF2(cleanPassword, newSalt);
+        const newSalt = generateSecureSalt_();
+        const newHash = hashPasswordPBKDF2_(cleanPassword, newSalt);
         updateFields.password_salt = newSalt;
         updateFields.password_hash = newHash;
       }
 
-      updateSheetRow('user', existingUser._rowIndex, updateFields);
-      return buildResponse(true, { id: editId }, 'Data pengguna berhasil diperbarui.');
+      updateSheetRow_('user', existingUser._rowIndex, updateFields);
+      return buildResponse_(true, { id: editId }, 'Data pengguna berhasil diperbarui.');
     } else {
       // Tambah User Baru
       if (!cleanPassword) {
-        return buildResponse(false, null, 'Password wajib diisi untuk pengguna baru.');
+        return buildResponse_(false, null, 'Password wajib diisi untuk pengguna baru.');
       }
       if (cleanPassword.length < 6) {
-        return buildResponse(false, null, 'Password minimal 6 karakter.');
+        return buildResponse_(false, null, 'Password minimal 6 karakter.');
       }
 
-      const newId = getStableUUID();
-      const salt = generateSecureSalt();
-      const hash = hashPasswordPBKDF2(cleanPassword, salt);
+      const newId = getStableUUID_();
+      const salt = generateSecureSalt_();
+      const hash = hashPasswordPBKDF2_(cleanPassword, salt);
 
-      appendSheetRow('user', {
+      appendSheetRow_('user', {
         id: newId,
         nama: cleanNama,
         nip: cleanNip,
@@ -1952,10 +2105,10 @@ function apiSaveUser(sessionToken, payload) {
         updated_at: nowIso
       });
 
-      return buildResponse(true, { id: newId }, 'Pengguna baru berhasil ditambahkan.');
+      return buildResponse_(true, { id: newId }, 'Pengguna baru berhasil ditambahkan.');
     }
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal menyimpan pengguna.');
+    return buildResponse_(false, null, err.message || 'Gagal menyimpan pengguna.');
   } finally {
     if (lock) {
       try { lock.releaseLock(); } catch (e) {}
@@ -1973,35 +2126,44 @@ function apiSaveUser(sessionToken, payload) {
  * @return {{ success: boolean, data: Object|null, message: string }}
  */
 function apiToggleUserStatus(sessionToken, userId, isActive) {
+  let lock = null;
   try {
-    const adminUser = requireAuth(sessionToken, 'kepala_sekolah');
+    if (typeof LockService !== 'undefined') {
+      lock = LockService.getScriptLock();
+      lock.waitLock(30000);
+    }
+    const adminUser = requireAuth_(sessionToken, 'kepala_sekolah');
 
     if (!userId) {
-      return buildResponse(false, null, 'ID pengguna diperlukan.');
+      return buildResponse_(false, null, 'ID pengguna diperlukan.');
     }
 
     if (adminUser.id === userId && !isActive) {
-      return buildResponse(false, null, 'Anda tidak dapat menonaktifkan akun Anda sendiri.');
+      return buildResponse_(false, null, 'Anda tidak dapat menonaktifkan akun Anda sendiri.');
     }
 
-    const uData = getSheetDataBatch('user');
+    const uData = getSheetDataBatch_('user');
     const existing = uData.rows.find(u => u.id === userId);
     if (!existing) {
-      return buildResponse(false, null, 'Data pengguna tidak ditemukan.');
+      return buildResponse_(false, null, 'Data pengguna tidak ditemukan.');
     }
 
     const targetActive = !!isActive;
     const nowIso = new Date().toISOString();
 
-    updateSheetRow('user', existing._rowIndex, {
+    updateSheetRow_('user', existing._rowIndex, {
       is_active: targetActive,
       updated_at: nowIso
     });
 
     const msg = targetActive ? 'Akun pengguna berhasil diaktifkan.' : 'Akun pengguna berhasil dinonaktifkan.';
-    return buildResponse(true, { id: userId, is_active: targetActive }, msg);
+    return buildResponse_(true, { id: userId, is_active: targetActive }, msg);
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal mengubah status pengguna.');
+    return buildResponse_(false, null, err.message || 'Gagal mengubah status pengguna.');
+  } finally {
+    if (lock) {
+      try { lock.releaseLock(); } catch (e) {}
+    }
   }
 }
 
@@ -2014,45 +2176,54 @@ function apiToggleUserStatus(sessionToken, userId, isActive) {
  * @return {{ success: boolean, data: null, message: string }}
  */
 function apiDeleteUser(sessionToken, userId) {
+  let lock = null;
   try {
-    const adminUser = requireAuth(sessionToken, 'kepala_sekolah');
+    if (typeof LockService !== 'undefined') {
+      lock = LockService.getScriptLock();
+      lock.waitLock(30000);
+    }
+    const adminUser = requireAuth_(sessionToken, 'kepala_sekolah');
 
     if (!userId) {
-      return buildResponse(false, null, 'ID pengguna diperlukan.');
+      return buildResponse_(false, null, 'ID pengguna diperlukan.');
     }
 
     if (adminUser.id === userId) {
-      return buildResponse(false, null, 'Anda tidak dapat menghapus akun Anda sendiri.');
+      return buildResponse_(false, null, 'Anda tidak dapat menghapus akun Anda sendiri.');
     }
 
-    const uData = getSheetDataBatch('user');
+    const uData = getSheetDataBatch_('user');
     const existing = uData.rows.find(u => u.id === userId);
     if (!existing) {
-      return buildResponse(false, null, 'Data pengguna tidak ditemukan.');
+      return buildResponse_(false, null, 'Data pengguna tidak ditemukan.');
     }
 
     // Proteksi relasi penugasan wali kelas
     try {
-      const wkData = getSheetDataBatch('wali_kelas');
+      const wkData = getSheetDataBatch_('wali_kelas');
       const hasWk = wkData.rows.some(w => w.user_id === userId);
       if (hasWk) {
-        return buildResponse(false, null, 'Pengguna ini memiliki riwayat penugasan kelas dan tidak dapat dihapus permanen demi menjaga keutuhan riwayat data. Silakan nonaktifkan akun sebagai gantinya.');
+        return buildResponse_(false, null, 'Pengguna ini memiliki riwayat penugasan kelas dan tidak dapat dihapus permanen demi menjaga keutuhan riwayat data. Silakan nonaktifkan akun sebagai gantinya.');
       }
     } catch (e) {}
 
     // Proteksi relasi pengaturan sekolah
     try {
-      const pengData = getSheetDataBatch('pengaturan');
+      const pengData = getSheetDataBatch_('pengaturan');
       const hasPeng = pengData.rows.some(p => p.user_id === userId);
       if (hasPeng) {
-        return buildResponse(false, null, 'Pengguna ini terhubung dengan profil kepala sekolah pada pengaturan dan tidak dapat dihapus.');
+        return buildResponse_(false, null, 'Pengguna ini terhubung dengan profil kepala sekolah pada pengaturan dan tidak dapat dihapus.');
       }
     } catch (e) {}
 
-    deleteSheetRow('user', existing._rowIndex);
-    return buildResponse(true, null, 'Pengguna berhasil dihapus.');
+    deleteSheetRow_('user', existing._rowIndex);
+    return buildResponse_(true, null, 'Pengguna berhasil dihapus.');
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal menghapus pengguna.');
+    return buildResponse_(false, null, err.message || 'Gagal menghapus pengguna.');
+  } finally {
+    if (lock) {
+      try { lock.releaseLock(); } catch (e) {}
+    }
   }
 }
 
@@ -2064,9 +2235,9 @@ function apiDeleteUser(sessionToken, userId) {
  * @param {string} [requestedWaliKelasId]
  * @return {{ assignment: Object, activeYear: Object }}
  */
-function resolveWaliKelasScope(sessionUser, requestedWaliKelasId) {
-  const wkData = getSheetDataBatch('wali_kelas');
-  const taData = getSheetDataBatch('tahun_ajaran');
+function resolveWaliKelasScope_(sessionUser, requestedWaliKelasId) {
+  const wkData = getSheetDataBatch_('wali_kelas');
+  const taData = getSheetDataBatch_('tahun_ajaran');
 
   const activeYear = taData.rows.find(t => t.is_active === true || String(t.is_active).toLowerCase() === 'true');
 
@@ -2130,13 +2301,13 @@ function resolveWaliKelasScope(sessionUser, requestedWaliKelasId) {
  */
 function apiGetSiswaList(sessionToken, filterWaliKelasId) {
   try {
-    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
-    const { assignment, activeYear } = resolveWaliKelasScope(user, filterWaliKelasId);
+    const user = requireAuth_(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    const { assignment, activeYear } = resolveWaliKelasScope_(user, filterWaliKelasId);
 
-    const sData = getSheetDataBatch('siswa');
-    const uData = getSheetDataBatch('user');
-    const wkData = getSheetDataBatch('wali_kelas');
-    const taData = getSheetDataBatch('tahun_ajaran');
+    const sData = getSheetDataBatch_('siswa');
+    const uData = getSheetDataBatch_('user');
+    const wkData = getSheetDataBatch_('wali_kelas');
+    const taData = getSheetDataBatch_('tahun_ajaran');
 
     let rows = sData.rows;
 
@@ -2151,9 +2322,9 @@ function apiGetSiswaList(sessionToken, filterWaliKelasId) {
     let nData = { rows: [] };
     let skData = { rows: [] };
     let rkData = { rows: [] };
-    try { nData = getSheetDataBatch('nilai_mata_pelajaran'); } catch (e) {}
-    try { skData = getSheetDataBatch('nilai_sikap'); } catch (e) {}
-    try { rkData = getSheetDataBatch('rekap_kehadiran'); } catch (e) {}
+    try { nData = getSheetDataBatch_('nilai_mata_pelajaran'); } catch (e) {}
+    try { skData = getSheetDataBatch_('nilai_sikap'); } catch (e) {}
+    try { rkData = getSheetDataBatch_('rekap_kehadiran'); } catch (e) {}
 
     const siswaList = rows.map(s => {
       const hasGrades = nData.rows.some(n => n.siswa_id === s.id) ||
@@ -2215,14 +2386,14 @@ function apiGetSiswaList(sessionToken, filterWaliKelasId) {
       penugasanOptions.sort((a, b) => Number(a.kelas) - Number(b.kelas));
     }
 
-    return buildResponse(true, {
+    return buildResponse_(true, {
       siswa: siswaList,
       penugasan: penugasanInfo,
       penugasanOptions: penugasanOptions,
       isReadOnly: penugasanInfo ? penugasanInfo.isLocked : false
     }, 'Daftar siswa berhasil dimuat.');
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal memuat daftar siswa.');
+    return buildResponse_(false, null, err.message || 'Gagal memuat daftar siswa.');
   }
 }
 
@@ -2237,31 +2408,31 @@ function apiGetSiswaList(sessionToken, filterWaliKelasId) {
  */
 function apiSaveSiswa(sessionToken, payload) {
   let lock = null;
-  if (typeof LockService !== 'undefined') {
-    lock = LockService.getScriptLock();
-    lock.waitLock(30000);
-  }
   try {
-    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    if (typeof LockService !== 'undefined') {
+      lock = LockService.getScriptLock();
+      lock.waitLock(30000);
+    }
+    const user = requireAuth_(sessionToken, ['kepala_sekolah', 'wali_kelas']);
 
     if (!payload || typeof payload !== 'object') {
-      return buildResponse(false, null, 'Data siswa tidak valid.');
+      return buildResponse_(false, null, 'Data siswa tidak valid.');
     }
 
     const editId = payload.id ? String(payload.id).trim() : null;
     const requestedWkId = payload.wali_kelas_id ? String(payload.wali_kelas_id).trim() : null;
 
     // Verifikasi cakupan penugasan dan proteksi IDOR
-    const { assignment, activeYear } = resolveWaliKelasScope(user, requestedWkId);
+    const { assignment, activeYear } = resolveWaliKelasScope_(user, requestedWkId);
     if (!assignment) {
-      return buildResponse(false, null, 'Penugasan kelas untuk siswa tidak ditemukan.');
+      return buildResponse_(false, null, 'Penugasan kelas untuk siswa tidak ditemukan.');
     }
 
     // Proteksi periode terkunci
-    const taData = getSheetDataBatch('tahun_ajaran');
+    const taData = getSheetDataBatch_('tahun_ajaran');
     const ta = taData.rows.find(t => t.id === assignment.tahun_ajaran_id);
     if (ta && (ta.is_locked === true || String(ta.is_locked).toLowerCase() === 'true')) {
-      return buildResponse(false, null, 'Periode akademik telah dikunci. Data siswa pada periode ini bersifat baca-saja.');
+      return buildResponse_(false, null, 'Periode akademik telah dikunci. Data siswa pada periode ini bersifat baca-saja.');
     }
 
     const cleanNama = String(payload.nama || '').trim();
@@ -2277,34 +2448,34 @@ function apiSaveSiswa(sessionToken, payload) {
     const isActive = payload.is_active === undefined ? true : (payload.is_active === true || String(payload.is_active).toLowerCase() === 'true');
 
     if (!cleanNama) {
-      return buildResponse(false, null, 'Nama lengkap siswa wajib diisi.');
+      return buildResponse_(false, null, 'Nama lengkap siswa wajib diisi.');
     }
     if (isNaN(noAbsen) || noAbsen < 1) {
-      return buildResponse(false, null, 'Nomor absen wajib berupa bilangan bulat positif (minimal 1).');
+      return buildResponse_(false, null, 'Nomor absen wajib berupa bilangan bulat positif (minimal 1).');
     }
     if (cleanJk !== 'L' && cleanJk !== 'P') {
-      return buildResponse(false, null, 'Jenis kelamin harus salah satu dari: L (Laki-laki) atau P (Perempuan).');
+      return buildResponse_(false, null, 'Jenis kelamin harus salah satu dari: L (Laki-laki) atau P (Perempuan).');
     }
 
     // Validasi NISN jika diisi (harus numerik, 10 digit jika sesuai standar nasional)
     if (cleanNisn && cleanNisn !== '-') {
       if (!/^\d{8,12}$/.test(cleanNisn)) {
-        return buildResponse(false, null, 'Format NISN harus berupa angka (standar 10 digit).');
+        return buildResponse_(false, null, 'Format NISN harus berupa angka (standar 10 digit).');
       }
     }
 
-    const sData = getSheetDataBatch('siswa');
+    const sData = getSheetDataBatch_('siswa');
 
     let existingSiswa = null;
     if (editId) {
       existingSiswa = sData.rows.find(s => s.id === editId);
       if (!existingSiswa) {
-        return buildResponse(false, null, 'Data siswa yang akan diedit tidak ditemukan.');
+        return buildResponse_(false, null, 'Data siswa yang akan diedit tidak ditemukan.');
       }
 
       // Pastikan wali kelas tidak mengedit siswa di luar kelasnya
       if (user.role === 'wali_kelas' && existingSiswa.wali_kelas_id !== assignment.id) {
-        return buildResponse(false, null, 'Akses ditolak: Anda tidak memiliki izin untuk mengedit siswa ini.');
+        return buildResponse_(false, null, 'Akses ditolak: Anda tidak memiliki izin untuk mengedit siswa ini.');
       }
     }
 
@@ -2315,7 +2486,7 @@ function apiSaveSiswa(sessionToken, payload) {
       (!editId || s.id !== editId)
     );
     if (dupAbsen) {
-      return buildResponse(false, null, 'Nomor absen ' + noAbsen + ' sudah digunakan oleh siswa ' + dupAbsen.nama + ' di kelas ini.');
+      return buildResponse_(false, null, 'Nomor absen ' + noAbsen + ' sudah digunakan oleh siswa ' + dupAbsen.nama + ' di kelas ini.');
     }
 
     // Validasi NISN unik di sekolah jika diisi
@@ -2325,7 +2496,7 @@ function apiSaveSiswa(sessionToken, payload) {
         (!editId || s.id !== editId)
       );
       if (dupNisn) {
-        return buildResponse(false, null, 'NISN "' + cleanNisn + '" sudah terdaftar untuk siswa ' + dupNisn.nama + '.');
+        return buildResponse_(false, null, 'NISN "' + cleanNisn + '" sudah terdaftar untuk siswa ' + dupNisn.nama + '.');
       }
     }
 
@@ -2336,14 +2507,14 @@ function apiSaveSiswa(sessionToken, payload) {
         (!editId || s.id !== editId)
       );
       if (dupNis) {
-        return buildResponse(false, null, 'NIS "' + cleanNis + '" sudah terdaftar untuk siswa ' + dupNis.nama + '.');
+        return buildResponse_(false, null, 'NIS "' + cleanNis + '" sudah terdaftar untuk siswa ' + dupNis.nama + '.');
       }
     }
 
     const nowIso = new Date().toISOString();
 
     if (editId) {
-      updateSheetRow('siswa', existingSiswa._rowIndex, {
+      updateSheetRow_('siswa', existingSiswa._rowIndex, {
         no_absen: noAbsen,
         nisn: cleanNisn,
         nis: cleanNis,
@@ -2357,10 +2528,10 @@ function apiSaveSiswa(sessionToken, payload) {
         updated_at: nowIso
       });
 
-      return buildResponse(true, { id: editId }, 'Data siswa berhasil diperbarui.');
+      return buildResponse_(true, { id: editId }, 'Data siswa berhasil diperbarui.');
     } else {
-      const newId = getStableUUID();
-      appendSheetRow('siswa', {
+      const newId = getStableUUID_();
+      appendSheetRow_('siswa', {
         id: newId,
         wali_kelas_id: assignment.id,
         nisn: cleanNisn,
@@ -2377,10 +2548,10 @@ function apiSaveSiswa(sessionToken, payload) {
         updated_at: nowIso
       });
 
-      return buildResponse(true, { id: newId }, 'Data siswa baru berhasil ditambahkan.');
+      return buildResponse_(true, { id: newId }, 'Data siswa baru berhasil ditambahkan.');
     }
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal menyimpan data siswa.');
+    return buildResponse_(false, null, err.message || 'Gagal menyimpan data siswa.');
   } finally {
     if (lock) {
       try { lock.releaseLock(); } catch (e) {}
@@ -2398,40 +2569,49 @@ function apiSaveSiswa(sessionToken, payload) {
  * @return {{ success: boolean, data: Object|null, message: string }}
  */
 function apiToggleSiswaStatus(sessionToken, siswaId, isActive) {
+  let lock = null;
   try {
-    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    if (typeof LockService !== 'undefined') {
+      lock = LockService.getScriptLock();
+      lock.waitLock(30000);
+    }
+    const user = requireAuth_(sessionToken, ['kepala_sekolah', 'wali_kelas']);
 
     if (!siswaId) {
-      return buildResponse(false, null, 'ID siswa diperlukan.');
+      return buildResponse_(false, null, 'ID siswa diperlukan.');
     }
 
-    const sData = getSheetDataBatch('siswa');
+    const sData = getSheetDataBatch_('siswa');
     const existingSiswa = sData.rows.find(s => s.id === siswaId);
     if (!existingSiswa) {
-      return buildResponse(false, null, 'Data siswa tidak ditemukan.');
+      return buildResponse_(false, null, 'Data siswa tidak ditemukan.');
     }
 
     // Verifikasi hak akses wali kelas
     if (user.role === 'wali_kelas') {
-      const wkData = getSheetDataBatch('wali_kelas');
+      const wkData = getSheetDataBatch_('wali_kelas');
       const assignment = wkData.rows.find(w => w.id === existingSiswa.wali_kelas_id && w.user_id === user.id);
       if (!assignment) {
-        return buildResponse(false, null, 'Akses ditolak: Anda tidak memiliki wewenang untuk mengubah status siswa ini.');
+        return buildResponse_(false, null, 'Akses ditolak: Anda tidak memiliki wewenang untuk mengubah status siswa ini.');
       }
     }
 
     const targetActive = !!isActive;
     const nowIso = new Date().toISOString();
 
-    updateSheetRow('siswa', existingSiswa._rowIndex, {
+    updateSheetRow_('siswa', existingSiswa._rowIndex, {
       is_active: targetActive,
       updated_at: nowIso
     });
 
     const msg = targetActive ? 'Siswa berhasil diaktifkan kembali.' : 'Siswa berhasil dinonaktifkan.';
-    return buildResponse(true, { id: siswaId, is_active: targetActive }, msg);
+    return buildResponse_(true, { id: siswaId, is_active: targetActive }, msg);
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal mengubah status siswa.');
+    return buildResponse_(false, null, err.message || 'Gagal mengubah status siswa.');
+  } finally {
+    if (lock) {
+      try { lock.releaseLock(); } catch (e) {}
+    }
   }
 }
 
@@ -2444,63 +2624,72 @@ function apiToggleSiswaStatus(sessionToken, siswaId, isActive) {
  * @return {{ success: boolean, data: null, message: string }}
  */
 function apiDeleteSiswa(sessionToken, siswaId) {
+  let lock = null;
   try {
-    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    if (typeof LockService !== 'undefined') {
+      lock = LockService.getScriptLock();
+      lock.waitLock(30000);
+    }
+    const user = requireAuth_(sessionToken, ['kepala_sekolah', 'wali_kelas']);
 
     if (!siswaId) {
-      return buildResponse(false, null, 'ID siswa diperlukan.');
+      return buildResponse_(false, null, 'ID siswa diperlukan.');
     }
 
-    const sData = getSheetDataBatch('siswa');
+    const sData = getSheetDataBatch_('siswa');
     const existingSiswa = sData.rows.find(s => s.id === siswaId);
     if (!existingSiswa) {
-      return buildResponse(false, null, 'Data siswa tidak ditemukan.');
+      return buildResponse_(false, null, 'Data siswa tidak ditemukan.');
     }
 
     // Verifikasi hak akses wali kelas
-    const wkData = getSheetDataBatch('wali_kelas');
+    const wkData = getSheetDataBatch_('wali_kelas');
     const assignment = wkData.rows.find(w => w.id === existingSiswa.wali_kelas_id);
     if (user.role === 'wali_kelas') {
       if (!assignment || assignment.user_id !== user.id) {
-        return buildResponse(false, null, 'Akses ditolak: Anda tidak memiliki wewenang untuk menghapus siswa ini.');
+        return buildResponse_(false, null, 'Akses ditolak: Anda tidak memiliki wewenang untuk menghapus siswa ini.');
       }
     }
 
     // Proteksi periode terkunci
     if (assignment) {
-      const taData = getSheetDataBatch('tahun_ajaran');
+      const taData = getSheetDataBatch_('tahun_ajaran');
       const ta = taData.rows.find(t => t.id === assignment.tahun_ajaran_id);
       if (ta && (ta.is_locked === true || String(ta.is_locked).toLowerCase() === 'true')) {
-        return buildResponse(false, null, 'Periode akademik telah dikunci. Data siswa pada periode ini tidak dapat dihapus.');
+        return buildResponse_(false, null, 'Periode akademik telah dikunci. Data siswa pada periode ini tidak dapat dihapus.');
       }
     }
 
     // Proteksi Integritas Relasi Historis: Nilai Mapel, Nilai Sikap, Rekap Kehadiran
     try {
-      const nData = getSheetDataBatch('nilai_mata_pelajaran');
+      const nData = getSheetDataBatch_('nilai_mata_pelajaran');
       if (nData.rows.some(n => n.siswa_id === siswaId)) {
-        return buildResponse(false, null, 'Siswa ini sudah memiliki riwayat nilai mata pelajaran dan tidak boleh dihapus permanen. Silakan nonaktifkan status siswa.');
+        return buildResponse_(false, null, 'Siswa ini sudah memiliki riwayat nilai mata pelajaran dan tidak boleh dihapus permanen. Silakan nonaktifkan status siswa.');
       }
     } catch (e) {}
 
     try {
-      const skData = getSheetDataBatch('nilai_sikap');
+      const skData = getSheetDataBatch_('nilai_sikap');
       if (skData.rows.some(sk => sk.siswa_id === siswaId)) {
-        return buildResponse(false, null, 'Siswa ini sudah memiliki riwayat penilaian sikap dan tidak boleh dihapus permanen. Silakan nonaktifkan status siswa.');
+        return buildResponse_(false, null, 'Siswa ini sudah memiliki riwayat penilaian sikap dan tidak boleh dihapus permanen. Silakan nonaktifkan status siswa.');
       }
     } catch (e) {}
 
     try {
-      const rkData = getSheetDataBatch('rekap_kehadiran');
+      const rkData = getSheetDataBatch_('rekap_kehadiran');
       if (rkData.rows.some(rk => rk.siswa_id === siswaId)) {
-        return buildResponse(false, null, 'Siswa ini sudah memiliki riwayat kehadiran dan tidak boleh dihapus permanen. Silakan nonaktifkan status siswa.');
+        return buildResponse_(false, null, 'Siswa ini sudah memiliki riwayat kehadiran dan tidak boleh dihapus permanen. Silakan nonaktifkan status siswa.');
       }
     } catch (e) {}
 
-    deleteSheetRow('siswa', existingSiswa._rowIndex);
-    return buildResponse(true, null, 'Data siswa berhasil dihapus.');
+    deleteSheetRow_('siswa', existingSiswa._rowIndex);
+    return buildResponse_(true, null, 'Data siswa berhasil dihapus.');
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal menghapus siswa.');
+    return buildResponse_(false, null, err.message || 'Gagal menghapus siswa.');
+  } finally {
+    if (lock) {
+      try { lock.releaseLock(); } catch (e) {}
+    }
   }
 }
 
@@ -2514,13 +2703,13 @@ function apiDeleteSiswa(sessionToken, siswaId) {
  */
 function apiGetMataPelajaranList(sessionToken, filterWaliKelasId) {
   try {
-    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
-    const { assignment } = resolveWaliKelasScope(user, filterWaliKelasId);
+    const user = requireAuth_(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    const { assignment } = resolveWaliKelasScope_(user, filterWaliKelasId);
 
-    const mapelData = getSheetDataBatch('mata_pelajaran');
-    const uData = getSheetDataBatch('user');
-    const wkData = getSheetDataBatch('wali_kelas');
-    const taData = getSheetDataBatch('tahun_ajaran');
+    const mapelData = getSheetDataBatch_('mata_pelajaran');
+    const uData = getSheetDataBatch_('user');
+    const wkData = getSheetDataBatch_('wali_kelas');
+    const taData = getSheetDataBatch_('tahun_ajaran');
 
     let rows = mapelData.rows;
 
@@ -2532,7 +2721,7 @@ function apiGetMataPelajaranList(sessionToken, filterWaliKelasId) {
 
     let nData = { rows: [] };
     try {
-      nData = getSheetDataBatch('nilai_mata_pelajaran');
+      nData = getSheetDataBatch_('nilai_mata_pelajaran');
     } catch (e) {}
 
     const mapelList = rows.map(m => {
@@ -2567,13 +2756,13 @@ function apiGetMataPelajaranList(sessionToken, filterWaliKelasId) {
       };
     }
 
-    return buildResponse(true, {
+    return buildResponse_(true, {
       mataPelajaran: mapelList,
       penugasan: penugasanInfo,
       isReadOnly: penugasanInfo ? penugasanInfo.isLocked : false
     }, 'Daftar mata pelajaran berhasil dimuat.');
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal memuat daftar mata pelajaran.');
+    return buildResponse_(false, null, err.message || 'Gagal memuat daftar mata pelajaran.');
   }
 }
 
@@ -2587,31 +2776,31 @@ function apiGetMataPelajaranList(sessionToken, filterWaliKelasId) {
  */
 function apiSaveMataPelajaran(sessionToken, payload) {
   let lock = null;
-  if (typeof LockService !== 'undefined') {
-    lock = LockService.getScriptLock();
-    lock.waitLock(30000);
-  }
   try {
-    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    if (typeof LockService !== 'undefined') {
+      lock = LockService.getScriptLock();
+      lock.waitLock(30000);
+    }
+    const user = requireAuth_(sessionToken, ['kepala_sekolah', 'wali_kelas']);
 
     if (!payload || typeof payload !== 'object') {
-      return buildResponse(false, null, 'Data mata pelajaran tidak valid.');
+      return buildResponse_(false, null, 'Data mata pelajaran tidak valid.');
     }
 
     const editId = payload.id ? String(payload.id).trim() : null;
     const requestedWkId = payload.wali_kelas_id ? String(payload.wali_kelas_id).trim() : null;
 
     // Verifikasi penugasan dan proteksi IDOR
-    const { assignment } = resolveWaliKelasScope(user, requestedWkId);
+    const { assignment } = resolveWaliKelasScope_(user, requestedWkId);
     if (!assignment) {
-      return buildResponse(false, null, 'Penugasan kelas untuk mata pelajaran tidak ditemukan.');
+      return buildResponse_(false, null, 'Penugasan kelas untuk mata pelajaran tidak ditemukan.');
     }
 
     // Proteksi periode terkunci
-    const taData = getSheetDataBatch('tahun_ajaran');
+    const taData = getSheetDataBatch_('tahun_ajaran');
     const ta = taData.rows.find(t => t.id === assignment.tahun_ajaran_id);
     if (ta && (ta.is_locked === true || String(ta.is_locked).toLowerCase() === 'true')) {
-      return buildResponse(false, null, 'Periode akademik telah dikunci. Mata pelajaran pada periode ini bersifat baca-saja.');
+      return buildResponse_(false, null, 'Periode akademik telah dikunci. Mata pelajaran pada periode ini bersifat baca-saja.');
     }
 
     const cleanKode = String(payload.kode_mata_pelajaran || '').trim().toUpperCase();
@@ -2619,23 +2808,23 @@ function apiSaveMataPelajaran(sessionToken, payload) {
     const isActive = payload.is_active === undefined ? true : (payload.is_active === true || String(payload.is_active).toLowerCase() === 'true');
 
     if (!cleanKode) {
-      return buildResponse(false, null, 'Kode mata pelajaran wajib diisi.');
+      return buildResponse_(false, null, 'Kode mata pelajaran wajib diisi.');
     }
     if (!cleanNama) {
-      return buildResponse(false, null, 'Nama mata pelajaran wajib diisi.');
+      return buildResponse_(false, null, 'Nama mata pelajaran wajib diisi.');
     }
 
-    const mapelData = getSheetDataBatch('mata_pelajaran');
+    const mapelData = getSheetDataBatch_('mata_pelajaran');
 
     let existingMapel = null;
     if (editId) {
       existingMapel = mapelData.rows.find(m => m.id === editId);
       if (!existingMapel) {
-        return buildResponse(false, null, 'Data mata pelajaran yang akan diedit tidak ditemukan.');
+        return buildResponse_(false, null, 'Data mata pelajaran yang akan diedit tidak ditemukan.');
       }
 
       if (user.role === 'wali_kelas' && existingMapel.wali_kelas_id !== assignment.id) {
-        return buildResponse(false, null, 'Akses ditolak: Anda tidak memiliki wewenang untuk mengedit mata pelajaran ini.');
+        return buildResponse_(false, null, 'Akses ditolak: Anda tidak memiliki wewenang untuk mengedit mata pelajaran ini.');
       }
     }
 
@@ -2646,7 +2835,7 @@ function apiSaveMataPelajaran(sessionToken, payload) {
       (!editId || m.id !== editId)
     );
     if (dupKode) {
-      return buildResponse(false, null, 'Kode mata pelajaran "' + cleanKode + '" sudah digunakan pada kelas ini.');
+      return buildResponse_(false, null, 'Kode mata pelajaran "' + cleanKode + '" sudah digunakan pada kelas ini.');
     }
 
     // Validasi keunikan nama mapel dalam penugasan
@@ -2656,23 +2845,23 @@ function apiSaveMataPelajaran(sessionToken, payload) {
       (!editId || m.id !== editId)
     );
     if (dupNama) {
-      return buildResponse(false, null, 'Mata pelajaran "' + cleanNama + '" sudah terdaftar pada kelas ini.');
+      return buildResponse_(false, null, 'Mata pelajaran "' + cleanNama + '" sudah terdaftar pada kelas ini.');
     }
 
     const nowIso = new Date().toISOString();
 
     if (editId) {
-      updateSheetRow('mata_pelajaran', existingMapel._rowIndex, {
+      updateSheetRow_('mata_pelajaran', existingMapel._rowIndex, {
         kode_mata_pelajaran: cleanKode,
         mata_pelajaran: cleanNama,
         is_active: isActive,
         updated_at: nowIso
       });
 
-      return buildResponse(true, { id: editId }, 'Mata pelajaran berhasil diperbarui.');
+      return buildResponse_(true, { id: editId }, 'Mata pelajaran berhasil diperbarui.');
     } else {
-      const newId = getStableUUID();
-      appendSheetRow('mata_pelajaran', {
+      const newId = getStableUUID_();
+      appendSheetRow_('mata_pelajaran', {
         id: newId,
         wali_kelas_id: assignment.id,
         kode_mata_pelajaran: cleanKode,
@@ -2682,10 +2871,10 @@ function apiSaveMataPelajaran(sessionToken, payload) {
         updated_at: nowIso
       });
 
-      return buildResponse(true, { id: newId }, 'Mata pelajaran baru berhasil ditambahkan.');
+      return buildResponse_(true, { id: newId }, 'Mata pelajaran baru berhasil ditambahkan.');
     }
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal menyimpan mata pelajaran.');
+    return buildResponse_(false, null, err.message || 'Gagal menyimpan mata pelajaran.');
   } finally {
     if (lock) {
       try { lock.releaseLock(); } catch (e) {}
@@ -2703,39 +2892,48 @@ function apiSaveMataPelajaran(sessionToken, payload) {
  * @return {{ success: boolean, data: Object|null, message: string }}
  */
 function apiToggleMataPelajaranStatus(sessionToken, mapelId, isActive) {
+  let lock = null;
   try {
-    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    if (typeof LockService !== 'undefined') {
+      lock = LockService.getScriptLock();
+      lock.waitLock(30000);
+    }
+    const user = requireAuth_(sessionToken, ['kepala_sekolah', 'wali_kelas']);
 
     if (!mapelId) {
-      return buildResponse(false, null, 'ID mata pelajaran diperlukan.');
+      return buildResponse_(false, null, 'ID mata pelajaran diperlukan.');
     }
 
-    const mapelData = getSheetDataBatch('mata_pelajaran');
+    const mapelData = getSheetDataBatch_('mata_pelajaran');
     const existingMapel = mapelData.rows.find(m => m.id === mapelId);
     if (!existingMapel) {
-      return buildResponse(false, null, 'Data mata pelajaran tidak ditemukan.');
+      return buildResponse_(false, null, 'Data mata pelajaran tidak ditemukan.');
     }
 
     if (user.role === 'wali_kelas') {
-      const wkData = getSheetDataBatch('wali_kelas');
+      const wkData = getSheetDataBatch_('wali_kelas');
       const assignment = wkData.rows.find(w => w.id === existingMapel.wali_kelas_id && w.user_id === user.id);
       if (!assignment) {
-        return buildResponse(false, null, 'Akses ditolak: Anda tidak memiliki wewenang untuk mengubah status mata pelajaran ini.');
+        return buildResponse_(false, null, 'Akses ditolak: Anda tidak memiliki wewenang untuk mengubah status mata pelajaran ini.');
       }
     }
 
     const targetActive = !!isActive;
     const nowIso = new Date().toISOString();
 
-    updateSheetRow('mata_pelajaran', existingMapel._rowIndex, {
+    updateSheetRow_('mata_pelajaran', existingMapel._rowIndex, {
       is_active: targetActive,
       updated_at: nowIso
     });
 
     const msg = targetActive ? 'Mata pelajaran berhasil diaktifkan.' : 'Mata pelajaran berhasil dinonaktifkan.';
-    return buildResponse(true, { id: mapelId, is_active: targetActive }, msg);
+    return buildResponse_(true, { id: mapelId, is_active: targetActive }, msg);
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal mengubah status mata pelajaran.');
+    return buildResponse_(false, null, err.message || 'Gagal mengubah status mata pelajaran.');
+  } finally {
+    if (lock) {
+      try { lock.releaseLock(); } catch (e) {}
+    }
   }
 }
 
@@ -2748,49 +2946,58 @@ function apiToggleMataPelajaranStatus(sessionToken, mapelId, isActive) {
  * @return {{ success: boolean, data: null, message: string }}
  */
 function apiDeleteMataPelajaran(sessionToken, mapelId) {
+  let lock = null;
   try {
-    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    if (typeof LockService !== 'undefined') {
+      lock = LockService.getScriptLock();
+      lock.waitLock(30000);
+    }
+    const user = requireAuth_(sessionToken, ['kepala_sekolah', 'wali_kelas']);
 
     if (!mapelId) {
-      return buildResponse(false, null, 'ID mata pelajaran diperlukan.');
+      return buildResponse_(false, null, 'ID mata pelajaran diperlukan.');
     }
 
-    const mapelData = getSheetDataBatch('mata_pelajaran');
+    const mapelData = getSheetDataBatch_('mata_pelajaran');
     const existingMapel = mapelData.rows.find(m => m.id === mapelId);
     if (!existingMapel) {
-      return buildResponse(false, null, 'Data mata pelajaran tidak ditemukan.');
+      return buildResponse_(false, null, 'Data mata pelajaran tidak ditemukan.');
     }
 
-    const wkData = getSheetDataBatch('wali_kelas');
+    const wkData = getSheetDataBatch_('wali_kelas');
     const assignment = wkData.rows.find(w => w.id === existingMapel.wali_kelas_id);
     if (user.role === 'wali_kelas') {
       if (!assignment || assignment.user_id !== user.id) {
-        return buildResponse(false, null, 'Akses ditolak: Anda tidak memiliki wewenang untuk menghapus mata pelajaran ini.');
+        return buildResponse_(false, null, 'Akses ditolak: Anda tidak memiliki wewenang untuk menghapus mata pelajaran ini.');
       }
     }
 
     // Proteksi periode terkunci
     if (assignment) {
-      const taData = getSheetDataBatch('tahun_ajaran');
+      const taData = getSheetDataBatch_('tahun_ajaran');
       const ta = taData.rows.find(t => t.id === assignment.tahun_ajaran_id);
       if (ta && (ta.is_locked === true || String(ta.is_locked).toLowerCase() === 'true')) {
-        return buildResponse(false, null, 'Periode akademik telah dikunci. Mata pelajaran pada periode ini tidak dapat dihapus.');
+        return buildResponse_(false, null, 'Periode akademik telah dikunci. Mata pelajaran pada periode ini tidak dapat dihapus.');
       }
     }
 
     // Proteksi integritas nilai
     try {
-      const nData = getSheetDataBatch('nilai_mata_pelajaran');
+      const nData = getSheetDataBatch_('nilai_mata_pelajaran');
       const hasGrades = nData.rows.some(n => n.mata_pelajaran_id === mapelId);
       if (hasGrades) {
-        return buildResponse(false, null, 'Mata pelajaran ini sudah memiliki riwayat nilai siswa dan tidak dapat dihapus permanen. Silakan nonaktifkan status mata pelajaran.');
+        return buildResponse_(false, null, 'Mata pelajaran ini sudah memiliki riwayat nilai siswa dan tidak dapat dihapus permanen. Silakan nonaktifkan status mata pelajaran.');
       }
     } catch (e) {}
 
-    deleteSheetRow('mata_pelajaran', existingMapel._rowIndex);
-    return buildResponse(true, null, 'Mata pelajaran berhasil dihapus.');
+    deleteSheetRow_('mata_pelajaran', existingMapel._rowIndex);
+    return buildResponse_(true, null, 'Mata pelajaran berhasil dihapus.');
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal menghapus mata pelajaran.');
+    return buildResponse_(false, null, err.message || 'Gagal menghapus mata pelajaran.');
+  } finally {
+    if (lock) {
+      try { lock.releaseLock(); } catch (e) {}
+    }
   }
 }
 
@@ -2805,7 +3012,7 @@ function apiDeleteMataPelajaran(sessionToken, mapelId) {
  * @param {Array<Object>} predikatRanges
  * @return {string}
  */
-function resolvePredikatScore(score, predikatRanges) {
+function resolvePredikatScore_(score, predikatRanges) {
   if (score === null || score === undefined || score === '' || isNaN(score)) {
     return '-';
   }
@@ -2840,14 +3047,14 @@ function resolvePredikatScore(score, predikatRanges) {
  */
 function apiGetPengaturanRapor(sessionToken, requestedWaliKelasId) {
   try {
-    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
-    const { assignment, activeYear } = resolveWaliKelasScope(user, requestedWaliKelasId);
+    const user = requireAuth_(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    const { assignment, activeYear } = resolveWaliKelasScope_(user, requestedWaliKelasId);
 
     if (!assignment) {
-      return buildResponse(false, null, 'Data penugasan kelas tidak ditemukan.');
+      return buildResponse_(false, null, 'Data penugasan kelas tidak ditemukan.');
     }
 
-    const prData = getSheetDataBatch('pengaturan_rapor');
+    const prData = getSheetDataBatch_('pengaturan_rapor');
     const existing = prData.rows.find(p => p.tahun_ajaran_id === assignment.tahun_ajaran_id && p.wali_kelas_id === assignment.id);
 
     const defaultPredikat = [
@@ -2881,7 +3088,7 @@ function apiGetPengaturanRapor(sessionToken, requestedWaliKelasId) {
 
     const isLocked = activeYear ? (activeYear.is_locked === true || String(activeYear.is_locked).toLowerCase() === 'true') : false;
 
-    return buildResponse(true, {
+    return buildResponse_(true, {
       config: config,
       assignment: {
         id: assignment.id,
@@ -2893,7 +3100,7 @@ function apiGetPengaturanRapor(sessionToken, requestedWaliKelasId) {
       isReadOnly: isLocked
     }, 'Pengaturan rapor berhasil dimuat.');
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal memuat pengaturan rapor.');
+    return buildResponse_(false, null, err.message || 'Gagal memuat pengaturan rapor.');
   }
 }
 
@@ -2907,29 +3114,29 @@ function apiGetPengaturanRapor(sessionToken, requestedWaliKelasId) {
  */
 function apiSavePengaturanRapor(sessionToken, payload) {
   let lock = null;
-  if (typeof LockService !== 'undefined') {
-    lock = LockService.getScriptLock();
-    lock.waitLock(30000);
-  }
   try {
-    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    if (typeof LockService !== 'undefined') {
+      lock = LockService.getScriptLock();
+      lock.waitLock(30000);
+    }
+    const user = requireAuth_(sessionToken, ['kepala_sekolah', 'wali_kelas']);
 
     if (!payload || typeof payload !== 'object') {
-      return buildResponse(false, null, 'Data pengaturan rapor tidak valid.');
+      return buildResponse_(false, null, 'Data pengaturan rapor tidak valid.');
     }
 
     const requestedWkId = payload.wali_kelas_id ? String(payload.wali_kelas_id).trim() : null;
-    const { assignment, activeYear } = resolveWaliKelasScope(user, requestedWkId);
+    const { assignment, activeYear } = resolveWaliKelasScope_(user, requestedWkId);
 
     if (!assignment) {
-      return buildResponse(false, null, 'Penugasan kelas tidak ditemukan.');
+      return buildResponse_(false, null, 'Penugasan kelas tidak ditemukan.');
     }
 
     // Proteksi periode terkunci
-    const taData = getSheetDataBatch('tahun_ajaran');
+    const taData = getSheetDataBatch_('tahun_ajaran');
     const ta = taData.rows.find(t => t.id === assignment.tahun_ajaran_id);
     if (ta && (ta.is_locked === true || String(ta.is_locked).toLowerCase() === 'true')) {
-      return buildResponse(false, null, 'Periode akademik telah dikunci. Pengaturan rapor bersifat baca-saja.');
+      return buildResponse_(false, null, 'Periode akademik telah dikunci. Pengaturan rapor bersifat baca-saja.');
     }
 
     // Validasi Bobot
@@ -2938,12 +3145,12 @@ function apiSavePengaturanRapor(sessionToken, payload) {
     const bUas = Number(payload.bobot_uas);
 
     if (isNaN(bTugas) || bTugas < 0 || isNaN(bUts) || bUts < 0 || isNaN(bUas) || bUas < 0) {
-      return buildResponse(false, null, 'Bobot tugas, UTS, dan UAS harus berupa angka tidak negatif (0–100).');
+      return buildResponse_(false, null, 'Bobot tugas, UTS, dan UAS harus berupa angka tidak negatif (0–100).');
     }
 
     const totalBobot = bTugas + bUts + bUas;
     if (Math.abs(totalBobot - 100) > 0.01) {
-      return buildResponse(false, null, 'Total bobot tugas, UTS, dan UAS harus tepat 100% (saat ini: ' + totalBobot + '%).');
+      return buildResponse_(false, null, 'Total bobot tugas, UTS, dan UAS harus tepat 100% (saat ini: ' + totalBobot + '%).');
     }
 
     // Validasi Predikat
@@ -2952,33 +3159,33 @@ function apiSavePengaturanRapor(sessionToken, payload) {
       try {
         predikatList = JSON.parse(predikatList);
       } catch (e) {
-        return buildResponse(false, null, 'Format data predikat tidak valid.');
+        return buildResponse_(false, null, 'Format data predikat tidak valid.');
       }
     }
 
     if (!Array.isArray(predikatList) || predikatList.length < 2) {
-      return buildResponse(false, null, 'Pengaturan predikat minimal memiliki 2 rentang (contoh: A, B, C, D).');
+      return buildResponse_(false, null, 'Pengaturan predikat minimal memiliki 2 rentang (contoh: A, B, C, D).');
     }
 
     for (let i = 0; i < predikatList.length; i++) {
       const p = predikatList[i];
       if (!p || typeof p !== 'object' || !p.label || typeof p.label !== 'string') {
-        return buildResponse(false, null, 'Label predikat pada baris ke-' + (i + 1) + ' wajib diisi.');
+        return buildResponse_(false, null, 'Label predikat pada baris ke-' + (i + 1) + ' wajib diisi.');
       }
       const minVal = Number(p.min);
       const maxVal = Number(p.max);
       if (isNaN(minVal) || isNaN(maxVal) || minVal < 0 || maxVal > 100 || minVal >= maxVal) {
-        return buildResponse(false, null, 'Rentang nilai predikat ' + p.label + ' harus dalam rentang 0–100 dan nilai minimum harus lebih kecil dari nilai maksimum.');
+        return buildResponse_(false, null, 'Rentang nilai predikat ' + p.label + ' harus dalam rentang 0–100 dan nilai minimum harus lebih kecil dari nilai maksimum.');
       }
     }
 
     // Periksa kontinuitas (tidak ada overlap dan tidak ada gap)
     const sortedPred = predikatList.slice().sort((a, b) => Number(a.min) - Number(b.min));
     if (Number(sortedPred[0].min) > 0.01) {
-      return buildResponse(false, null, 'Rentang predikat terendah harus dimulai dari angka 0.');
+      return buildResponse_(false, null, 'Rentang predikat terendah harus dimulai dari angka 0.');
     }
     if (Number(sortedPred[sortedPred.length - 1].max) < 99.99) {
-      return buildResponse(false, null, 'Rentang predikat tertinggi harus mencapai angka 100.');
+      return buildResponse_(false, null, 'Rentang predikat tertinggi harus mencapai angka 100.');
     }
 
     for (let i = 0; i < sortedPred.length - 1; i++) {
@@ -2988,31 +3195,31 @@ function apiSavePengaturanRapor(sessionToken, payload) {
       const nextMin = Number(next.min);
 
       if (prevMax > nextMin + 0.001) {
-        return buildResponse(false, null, 'Terdapat tumpang tindih (overlap) antara predikat ' + prev.label + ' dan ' + next.label + '.');
+        return buildResponse_(false, null, 'Terdapat tumpang tindih (overlap) antara predikat ' + prev.label + ' dan ' + next.label + '.');
       }
       if (nextMin - prevMax > 0.02) {
-        return buildResponse(false, null, 'Terdapat celah nilai (gap) antara predikat ' + prev.label + ' (maks: ' + prevMax + ') dan ' + next.label + ' (min: ' + nextMin + ').');
+        return buildResponse_(false, null, 'Terdapat celah nilai (gap) antara predikat ' + prev.label + ' (maks: ' + prevMax + ') dan ' + next.label + ' (min: ' + nextMin + ').');
       }
     }
 
-    const prData = getSheetDataBatch('pengaturan_rapor');
+    const prData = getSheetDataBatch_('pengaturan_rapor');
     const existing = prData.rows.find(p => p.tahun_ajaran_id === assignment.tahun_ajaran_id && p.wali_kelas_id === assignment.id);
 
     const nowIso = new Date().toISOString();
     const jsonPredikat = JSON.stringify(predikatList);
 
     if (existing) {
-      updateSheetRow('pengaturan_rapor', existing._rowIndex, {
+      updateSheetRow_('pengaturan_rapor', existing._rowIndex, {
         bobot_tugas: bTugas,
         bobot_uts: bUts,
         bobot_uas: bUas,
         predikat: jsonPredikat,
         updated_at: nowIso
       });
-      return buildResponse(true, { id: existing.id }, 'Pengaturan rapor berhasil diperbarui.');
+      return buildResponse_(true, { id: existing.id }, 'Pengaturan rapor berhasil diperbarui.');
     } else {
-      const newId = getStableUUID();
-      appendSheetRow('pengaturan_rapor', {
+      const newId = getStableUUID_();
+      appendSheetRow_('pengaturan_rapor', {
         id: newId,
         tahun_ajaran_id: assignment.tahun_ajaran_id,
         wali_kelas_id: assignment.id,
@@ -3023,10 +3230,10 @@ function apiSavePengaturanRapor(sessionToken, payload) {
         created_at: nowIso,
         updated_at: nowIso
       });
-      return buildResponse(true, { id: newId }, 'Pengaturan rapor berhasil disimpan.');
+      return buildResponse_(true, { id: newId }, 'Pengaturan rapor berhasil disimpan.');
     }
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal menyimpan pengaturan rapor.');
+    return buildResponse_(false, null, err.message || 'Gagal menyimpan pengaturan rapor.');
   } finally {
     if (lock) {
       try { lock.releaseLock(); } catch (e) {}
@@ -3045,14 +3252,14 @@ function apiSavePengaturanRapor(sessionToken, payload) {
  */
 function apiGetNilaiMataPelajaran(sessionToken, mataPelajaranId, requestedWaliKelasId) {
   try {
-    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
-    const { assignment, activeYear } = resolveWaliKelasScope(user, requestedWaliKelasId);
+    const user = requireAuth_(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    const { assignment, activeYear } = resolveWaliKelasScope_(user, requestedWaliKelasId);
 
     if (!assignment) {
-      return buildResponse(false, null, 'Data penugasan kelas tidak ditemukan.');
+      return buildResponse_(false, null, 'Data penugasan kelas tidak ditemukan.');
     }
 
-    const mapelData = getSheetDataBatch('mata_pelajaran');
+    const mapelData = getSheetDataBatch_('mata_pelajaran');
     const activeMapels = mapelData.rows.filter(m =>
       m.wali_kelas_id === assignment.id &&
       (m.is_active === true || String(m.is_active).toLowerCase() === 'true')
@@ -3060,7 +3267,7 @@ function apiGetNilaiMataPelajaran(sessionToken, mataPelajaranId, requestedWaliKe
     activeMapels.sort((a, b) => a.kode_mata_pelajaran.localeCompare(b.kode_mata_pelajaran));
 
     if (activeMapels.length === 0) {
-      return buildResponse(true, {
+      return buildResponse_(true, {
         mapelCurrent: null,
         mapelList: [],
         siswaNilaiList: [],
@@ -3081,7 +3288,7 @@ function apiGetNilaiMataPelajaran(sessionToken, mataPelajaranId, requestedWaliKe
     }
 
     // Ambil konfigurasi rapor untuk predikat
-    const prData = getSheetDataBatch('pengaturan_rapor');
+    const prData = getSheetDataBatch_('pengaturan_rapor');
     const existingPr = prData.rows.find(p => p.tahun_ajaran_id === assignment.tahun_ajaran_id && p.wali_kelas_id === assignment.id);
     let predikatRanges = [
       { label: 'A', min: 90, max: 100 },
@@ -3097,7 +3304,7 @@ function apiGetNilaiMataPelajaran(sessionToken, mataPelajaranId, requestedWaliKe
     }
 
     // Ambil siswa aktif
-    const sData = getSheetDataBatch('siswa');
+    const sData = getSheetDataBatch_('siswa');
     const siswaList = sData.rows.filter(s =>
       s.wali_kelas_id === assignment.id &&
       (s.is_active === true || String(s.is_active).toLowerCase() === 'true')
@@ -3107,7 +3314,7 @@ function apiGetNilaiMataPelajaran(sessionToken, mataPelajaranId, requestedWaliKe
     // Ambil nilai tersimpan
     let nData = { rows: [] };
     try {
-      nData = getSheetDataBatch('nilai_mata_pelajaran');
+      nData = getSheetDataBatch_('nilai_mata_pelajaran');
     } catch (e) {}
 
     let countLengkap = 0;
@@ -3120,7 +3327,7 @@ function apiGetNilaiMataPelajaran(sessionToken, mataPelajaranId, requestedWaliKe
       }
 
       const nAkhir = existingGrade && existingGrade.nilai_akhir !== '' && existingGrade.nilai_akhir !== null ? Number(existingGrade.nilai_akhir) : '';
-      const predikat = isComplete && nAkhir !== '' ? resolvePredikatScore(nAkhir, predikatRanges) : '-';
+      const predikat = isComplete && nAkhir !== '' ? resolvePredikatScore_(nAkhir, predikatRanges) : '-';
 
       return {
         id: existingGrade ? existingGrade.id : null,
@@ -3143,7 +3350,7 @@ function apiGetNilaiMataPelajaran(sessionToken, mataPelajaranId, requestedWaliKe
 
     const isLocked = activeYear ? (activeYear.is_locked === true || String(activeYear.is_locked).toLowerCase() === 'true') : false;
 
-    return buildResponse(true, {
+    return buildResponse_(true, {
       mapelCurrent: {
         id: targetMapel.id,
         kode: targetMapel.kode_mata_pelajaran,
@@ -3171,7 +3378,7 @@ function apiGetNilaiMataPelajaran(sessionToken, mataPelajaranId, requestedWaliKe
       isReadOnly: isLocked
     }, 'Daftar nilai berhasil dimuat.');
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal memuat nilai mata pelajaran.');
+    return buildResponse_(false, null, err.message || 'Gagal memuat nilai mata pelajaran.');
   }
 }
 
@@ -3185,61 +3392,61 @@ function apiGetNilaiMataPelajaran(sessionToken, mataPelajaranId, requestedWaliKe
  */
 function apiSaveNilaiMataPelajaranBatch(sessionToken, payload) {
   let lock = null;
-  if (typeof LockService !== 'undefined') {
-    lock = LockService.getScriptLock();
-    lock.waitLock(30000);
-  }
   try {
-    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    if (typeof LockService !== 'undefined') {
+      lock = LockService.getScriptLock();
+      lock.waitLock(30000);
+    }
+    const user = requireAuth_(sessionToken, ['kepala_sekolah', 'wali_kelas']);
 
     if (!payload || typeof payload !== 'object') {
-      return buildResponse(false, null, 'Data input nilai tidak valid.');
+      return buildResponse_(false, null, 'Data input nilai tidak valid.');
     }
 
     const targetMapelId = payload.mata_pelajaran_id ? String(payload.mata_pelajaran_id).trim() : null;
     if (!targetMapelId) {
-      return buildResponse(false, null, 'ID mata pelajaran wajib ditentukan.');
+      return buildResponse_(false, null, 'ID mata pelajaran wajib ditentukan.');
     }
 
     const requestedWkId = payload.wali_kelas_id ? String(payload.wali_kelas_id).trim() : null;
-    const { assignment, activeYear } = resolveWaliKelasScope(user, requestedWkId);
+    const { assignment, activeYear } = resolveWaliKelasScope_(user, requestedWkId);
 
     if (!assignment) {
-      return buildResponse(false, null, 'Penugasan kelas tidak ditemukan.');
+      return buildResponse_(false, null, 'Penugasan kelas tidak ditemukan.');
     }
 
     // Proteksi periode terkunci
-    const taData = getSheetDataBatch('tahun_ajaran');
+    const taData = getSheetDataBatch_('tahun_ajaran');
     const ta = taData.rows.find(t => t.id === assignment.tahun_ajaran_id);
     if (ta && (ta.is_locked === true || String(ta.is_locked).toLowerCase() === 'true')) {
-      return buildResponse(false, null, 'Periode akademik telah dikunci. Nilai mata pelajaran bersifat baca-saja.');
+      return buildResponse_(false, null, 'Periode akademik telah dikunci. Nilai mata pelajaran bersifat baca-saja.');
     }
 
     // Pastikan mata pelajaran memang milik penugasan ini
-    const mapelData = getSheetDataBatch('mata_pelajaran');
+    const mapelData = getSheetDataBatch_('mata_pelajaran');
     const mapelItem = mapelData.rows.find(m => m.id === targetMapelId && m.wali_kelas_id === assignment.id);
     if (!mapelItem) {
-      return buildResponse(false, null, 'Akses ditolak: Mata pelajaran ini tidak terdaftar pada kelas yang Anda ampu.');
+      return buildResponse_(false, null, 'Akses ditolak: Mata pelajaran ini tidak terdaftar pada kelas yang Anda ampu.');
     }
 
     // Pastikan siswa yang dikirim memang siswa milik penugasan ini
-    const sData = getSheetDataBatch('siswa');
+    const sData = getSheetDataBatch_('siswa');
     const validSiswaIds = new Set(sData.rows.filter(s => s.wali_kelas_id === assignment.id).map(s => s.id));
 
     const rows = Array.isArray(payload.rows) ? payload.rows : [];
     if (rows.length === 0) {
-      return buildResponse(false, null, 'Tidak ada baris nilai yang dikirim untuk disimpan.');
+      return buildResponse_(false, null, 'Tidak ada baris nilai yang dikirim untuk disimpan.');
     }
 
     // Ambil bobot penilaian untuk kalkulasi
-    const prData = getSheetDataBatch('pengaturan_rapor');
+    const prData = getSheetDataBatch_('pengaturan_rapor');
     const existingPr = prData.rows.find(p => p.tahun_ajaran_id === assignment.tahun_ajaran_id && p.wali_kelas_id === assignment.id);
     const bobotTugas = existingPr && existingPr.bobot_tugas !== '' ? Number(existingPr.bobot_tugas) : 40;
     const bobotUts = existingPr && existingPr.bobot_uts !== '' ? Number(existingPr.bobot_uts) : 30;
     const bobotUas = existingPr && existingPr.bobot_uas !== '' ? Number(existingPr.bobot_uas) : 30;
 
     // Helper validasi nilai per sel
-    function parseGradeVal(val, fieldName, siswaId) {
+    function parseGradeVal_(val, fieldName, siswaId) {
       if (val === null || val === undefined || val === '') {
         return '';
       }
@@ -3250,7 +3457,7 @@ function apiSaveNilaiMataPelajaranBatch(sessionToken, payload) {
       return num;
     }
 
-    const nData = getSheetDataBatch('nilai_mata_pelajaran');
+    const nData = getSheetDataBatch_('nilai_mata_pelajaran');
     const nowIso = new Date().toISOString();
     let updatedCount = 0;
 
@@ -3260,15 +3467,15 @@ function apiSaveNilaiMataPelajaranBatch(sessionToken, payload) {
       const sId = String(r.siswa_id).trim();
 
       if (!validSiswaIds.has(sId)) {
-        return buildResponse(false, null, 'Akses ditolak: Terdapat siswa yang bukan anggota rombel penugasan ini.');
+        return buildResponse_(false, null, 'Akses ditolak: Terdapat siswa yang bukan anggota rombel penugasan ini.');
       }
 
-      const t1 = parseGradeVal(r.nilai_tugas_1, 'Tugas 1', sId);
-      const t2 = parseGradeVal(r.nilai_tugas_2, 'Tugas 2', sId);
-      const t3 = parseGradeVal(r.nilai_tugas_3, 'Tugas 3', sId);
-      const t4 = parseGradeVal(r.nilai_tugas_4, 'Tugas 4', sId);
-      const uts = parseGradeVal(r.nilai_uts, 'UTS', sId);
-      const uas = parseGradeVal(r.nilai_uas, 'UAS', sId);
+      const t1 = parseGradeVal_(r.nilai_tugas_1, 'Tugas 1', sId);
+      const t2 = parseGradeVal_(r.nilai_tugas_2, 'Tugas 2', sId);
+      const t3 = parseGradeVal_(r.nilai_tugas_3, 'Tugas 3', sId);
+      const t4 = parseGradeVal_(r.nilai_tugas_4, 'Tugas 4', sId);
+      const uts = parseGradeVal_(r.nilai_uts, 'UTS', sId);
+      const uas = parseGradeVal_(r.nilai_uas, 'UAS', sId);
 
       // Rule: Hanya jika seluruh komponen wajib lengkap (T1, T2, T3, T4, UTS, UAS), nilai akhir dihitung.
       // Komponen kosong tidak dianggap 0.
@@ -3298,18 +3505,18 @@ function apiSaveNilaiMataPelajaranBatch(sessionToken, payload) {
       };
 
       if (existingRecord) {
-        updateSheetRow('nilai_mata_pelajaran', existingRecord._rowIndex, fieldsToSave);
+        updateSheetRow_('nilai_mata_pelajaran', existingRecord._rowIndex, fieldsToSave);
       } else {
-        fieldsToSave.id = getStableUUID();
+        fieldsToSave.id = getStableUUID_();
         fieldsToSave.created_at = nowIso;
-        appendSheetRow('nilai_mata_pelajaran', fieldsToSave);
+        appendSheetRow_('nilai_mata_pelajaran', fieldsToSave);
       }
       updatedCount++;
     }
 
-    return buildResponse(true, { updatedCount: updatedCount }, 'Nilai mata pelajaran ' + mapelItem.mata_pelajaran + ' berhasil disimpan.');
+    return buildResponse_(true, { updatedCount: updatedCount }, 'Nilai mata pelajaran ' + mapelItem.mata_pelajaran + ' berhasil disimpan.');
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal menyimpan nilai mata pelajaran.');
+    return buildResponse_(false, null, err.message || 'Gagal menyimpan nilai mata pelajaran.');
   } finally {
     if (lock) {
       try { lock.releaseLock(); } catch (e) {}
@@ -3327,14 +3534,14 @@ function apiSaveNilaiMataPelajaranBatch(sessionToken, payload) {
  */
 function apiGetNilaiSikapList(sessionToken, requestedWaliKelasId) {
   try {
-    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
-    const { assignment, activeYear } = resolveWaliKelasScope(user, requestedWaliKelasId);
+    const user = requireAuth_(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    const { assignment, activeYear } = resolveWaliKelasScope_(user, requestedWaliKelasId);
 
     if (!assignment) {
-      return buildResponse(false, null, 'Data penugasan kelas tidak ditemukan.');
+      return buildResponse_(false, null, 'Data penugasan kelas tidak ditemukan.');
     }
 
-    const sData = getSheetDataBatch('siswa');
+    const sData = getSheetDataBatch_('siswa');
     const siswaList = sData.rows.filter(s =>
       s.wali_kelas_id === assignment.id &&
       (s.is_active === true || String(s.is_active).toLowerCase() === 'true')
@@ -3343,7 +3550,7 @@ function apiGetNilaiSikapList(sessionToken, requestedWaliKelasId) {
 
     let skData = { rows: [] };
     try {
-      skData = getSheetDataBatch('nilai_sikap');
+      skData = getSheetDataBatch_('nilai_sikap');
     } catch (e) {}
 
     let countLengkap = 0;
@@ -3368,7 +3575,7 @@ function apiGetNilaiSikapList(sessionToken, requestedWaliKelasId) {
 
     const isLocked = activeYear ? (activeYear.is_locked === true || String(activeYear.is_locked).toLowerCase() === 'true') : false;
 
-    return buildResponse(true, {
+    return buildResponse_(true, {
       siswaSikapList: siswaSikapList,
       summary: {
         totalSiswa: siswaList.length,
@@ -3384,7 +3591,7 @@ function apiGetNilaiSikapList(sessionToken, requestedWaliKelasId) {
       isReadOnly: isLocked
     }, 'Daftar penilaian sikap berhasil dimuat.');
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal memuat penilaian sikap.');
+    return buildResponse_(false, null, err.message || 'Gagal memuat penilaian sikap.');
   }
 }
 
@@ -3398,41 +3605,41 @@ function apiGetNilaiSikapList(sessionToken, requestedWaliKelasId) {
  */
 function apiSaveNilaiSikapBatch(sessionToken, payload) {
   let lock = null;
-  if (typeof LockService !== 'undefined') {
-    lock = LockService.getScriptLock();
-    lock.waitLock(30000);
-  }
   try {
-    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    if (typeof LockService !== 'undefined') {
+      lock = LockService.getScriptLock();
+      lock.waitLock(30000);
+    }
+    const user = requireAuth_(sessionToken, ['kepala_sekolah', 'wali_kelas']);
 
     if (!payload || typeof payload !== 'object') {
-      return buildResponse(false, null, 'Data penilaian sikap tidak valid.');
+      return buildResponse_(false, null, 'Data penilaian sikap tidak valid.');
     }
 
     const requestedWkId = payload.wali_kelas_id ? String(payload.wali_kelas_id).trim() : null;
-    const { assignment, activeYear } = resolveWaliKelasScope(user, requestedWkId);
+    const { assignment, activeYear } = resolveWaliKelasScope_(user, requestedWkId);
 
     if (!assignment) {
-      return buildResponse(false, null, 'Penugasan kelas tidak ditemukan.');
+      return buildResponse_(false, null, 'Penugasan kelas tidak ditemukan.');
     }
 
     // Proteksi periode terkunci
-    const taData = getSheetDataBatch('tahun_ajaran');
+    const taData = getSheetDataBatch_('tahun_ajaran');
     const ta = taData.rows.find(t => t.id === assignment.tahun_ajaran_id);
     if (ta && (ta.is_locked === true || String(ta.is_locked).toLowerCase() === 'true')) {
-      return buildResponse(false, null, 'Periode akademik telah dikunci. Penilaian sikap bersifat baca-saja.');
+      return buildResponse_(false, null, 'Periode akademik telah dikunci. Penilaian sikap bersifat baca-saja.');
     }
 
-    const sData = getSheetDataBatch('siswa');
+    const sData = getSheetDataBatch_('siswa');
     const validSiswaIds = new Set(sData.rows.filter(s => s.wali_kelas_id === assignment.id).map(s => s.id));
 
     const rows = Array.isArray(payload.rows) ? payload.rows : [];
     if (rows.length === 0) {
-      return buildResponse(false, null, 'Tidak ada baris nilai sikap yang dikirim untuk disimpan.');
+      return buildResponse_(false, null, 'Tidak ada baris nilai sikap yang dikirim untuk disimpan.');
     }
 
     const validPredikats = new Set(['Sangat Baik', 'Baik', 'Cukup', 'Kurang', 'A', 'B', 'C', 'D']);
-    const skData = getSheetDataBatch('nilai_sikap');
+    const skData = getSheetDataBatch_('nilai_sikap');
     const nowIso = new Date().toISOString();
     let updatedCount = 0;
 
@@ -3442,12 +3649,12 @@ function apiSaveNilaiSikapBatch(sessionToken, payload) {
       const sId = String(r.siswa_id).trim();
 
       if (!validSiswaIds.has(sId)) {
-        return buildResponse(false, null, 'Akses ditolak: Terdapat siswa yang bukan anggota rombel penugasan ini.');
+        return buildResponse_(false, null, 'Akses ditolak: Terdapat siswa yang bukan anggota rombel penugasan ini.');
       }
 
       const cleanPredikat = r.predikat ? String(r.predikat).trim() : '';
       if (cleanPredikat && !validPredikats.has(cleanPredikat)) {
-        return buildResponse(false, null, 'Predikat sikap "' + cleanPredikat + '" tidak valid. Pilihan yang diizinkan: Sangat Baik, Baik, Cukup, Kurang.');
+        return buildResponse_(false, null, 'Predikat sikap "' + cleanPredikat + '" tidak valid. Pilihan yang diizinkan: Sangat Baik, Baik, Cukup, Kurang.');
       }
 
       const cleanDeskripsi = r.deskripsi ? String(r.deskripsi).trim() : '';
@@ -3462,18 +3669,18 @@ function apiSaveNilaiSikapBatch(sessionToken, payload) {
       };
 
       if (existingRecord) {
-        updateSheetRow('nilai_sikap', existingRecord._rowIndex, fieldsToSave);
+        updateSheetRow_('nilai_sikap', existingRecord._rowIndex, fieldsToSave);
       } else {
-        fieldsToSave.id = getStableUUID();
+        fieldsToSave.id = getStableUUID_();
         fieldsToSave.created_at = nowIso;
-        appendSheetRow('nilai_sikap', fieldsToSave);
+        appendSheetRow_('nilai_sikap', fieldsToSave);
       }
       updatedCount++;
     }
 
-    return buildResponse(true, { updatedCount: updatedCount }, 'Penilaian sikap berhasil disimpan.');
+    return buildResponse_(true, { updatedCount: updatedCount }, 'Penilaian sikap berhasil disimpan.');
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal menyimpan penilaian sikap.');
+    return buildResponse_(false, null, err.message || 'Gagal menyimpan penilaian sikap.');
   } finally {
     if (lock) {
       try { lock.releaseLock(); } catch (e) {}
@@ -3491,14 +3698,14 @@ function apiSaveNilaiSikapBatch(sessionToken, payload) {
  */
 function apiGetRekapKehadiranList(sessionToken, requestedWaliKelasId) {
   try {
-    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
-    const { assignment, activeYear } = resolveWaliKelasScope(user, requestedWaliKelasId);
+    const user = requireAuth_(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    const { assignment, activeYear } = resolveWaliKelasScope_(user, requestedWaliKelasId);
 
     if (!assignment) {
-      return buildResponse(false, null, 'Data penugasan kelas tidak ditemukan.');
+      return buildResponse_(false, null, 'Data penugasan kelas tidak ditemukan.');
     }
 
-    const sData = getSheetDataBatch('siswa');
+    const sData = getSheetDataBatch_('siswa');
     const siswaList = sData.rows.filter(s =>
       s.wali_kelas_id === assignment.id &&
       (s.is_active === true || String(s.is_active).toLowerCase() === 'true')
@@ -3507,7 +3714,7 @@ function apiGetRekapKehadiranList(sessionToken, requestedWaliKelasId) {
 
     let rkData = { rows: [] };
     try {
-      rkData = getSheetDataBatch('rekap_kehadiran');
+      rkData = getSheetDataBatch_('rekap_kehadiran');
     } catch (e) {}
 
     let totalHadir = 0;
@@ -3548,7 +3755,7 @@ function apiGetRekapKehadiranList(sessionToken, requestedWaliKelasId) {
 
     const isLocked = activeYear ? (activeYear.is_locked === true || String(activeYear.is_locked).toLowerCase() === 'true') : false;
 
-    return buildResponse(true, {
+    return buildResponse_(true, {
       siswaKehadiranList: siswaKehadiranList,
       totals: {
         hadir: totalHadir,
@@ -3570,7 +3777,7 @@ function apiGetRekapKehadiranList(sessionToken, requestedWaliKelasId) {
       isReadOnly: isLocked
     }, 'Rekap kehadiran berhasil dimuat.');
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal memuat rekap kehadiran.');
+    return buildResponse_(false, null, err.message || 'Gagal memuat rekap kehadiran.');
   }
 }
 
@@ -3584,40 +3791,40 @@ function apiGetRekapKehadiranList(sessionToken, requestedWaliKelasId) {
  */
 function apiSaveRekapKehadiranBatch(sessionToken, payload) {
   let lock = null;
-  if (typeof LockService !== 'undefined') {
-    lock = LockService.getScriptLock();
-    lock.waitLock(30000);
-  }
   try {
-    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    if (typeof LockService !== 'undefined') {
+      lock = LockService.getScriptLock();
+      lock.waitLock(30000);
+    }
+    const user = requireAuth_(sessionToken, ['kepala_sekolah', 'wali_kelas']);
 
     if (!payload || typeof payload !== 'object') {
-      return buildResponse(false, null, 'Data rekap kehadiran tidak valid.');
+      return buildResponse_(false, null, 'Data rekap kehadiran tidak valid.');
     }
 
     const requestedWkId = payload.wali_kelas_id ? String(payload.wali_kelas_id).trim() : null;
-    const { assignment, activeYear } = resolveWaliKelasScope(user, requestedWkId);
+    const { assignment, activeYear } = resolveWaliKelasScope_(user, requestedWkId);
 
     if (!assignment) {
-      return buildResponse(false, null, 'Penugasan kelas tidak ditemukan.');
+      return buildResponse_(false, null, 'Penugasan kelas tidak ditemukan.');
     }
 
     // Proteksi periode terkunci
-    const taData = getSheetDataBatch('tahun_ajaran');
+    const taData = getSheetDataBatch_('tahun_ajaran');
     const ta = taData.rows.find(t => t.id === assignment.tahun_ajaran_id);
     if (ta && (ta.is_locked === true || String(ta.is_locked).toLowerCase() === 'true')) {
-      return buildResponse(false, null, 'Periode akademik telah dikunci. Rekap kehadiran bersifat baca-saja.');
+      return buildResponse_(false, null, 'Periode akademik telah dikunci. Rekap kehadiran bersifat baca-saja.');
     }
 
-    const sData = getSheetDataBatch('siswa');
+    const sData = getSheetDataBatch_('siswa');
     const validSiswaIds = new Set(sData.rows.filter(s => s.wali_kelas_id === assignment.id).map(s => s.id));
 
     const rows = Array.isArray(payload.rows) ? payload.rows : [];
     if (rows.length === 0) {
-      return buildResponse(false, null, 'Tidak ada baris kehadiran yang dikirim untuk disimpan.');
+      return buildResponse_(false, null, 'Tidak ada baris kehadiran yang dikirim untuk disimpan.');
     }
 
-    function parseAttendanceVal(val, fieldName) {
+    function parseAttendanceVal_(val, fieldName) {
       if (val === null || val === undefined || val === '') {
         return '';
       }
@@ -3628,7 +3835,7 @@ function apiSaveRekapKehadiranBatch(sessionToken, payload) {
       return num;
     }
 
-    const rkData = getSheetDataBatch('rekap_kehadiran');
+    const rkData = getSheetDataBatch_('rekap_kehadiran');
     const nowIso = new Date().toISOString();
     let updatedCount = 0;
 
@@ -3638,13 +3845,13 @@ function apiSaveRekapKehadiranBatch(sessionToken, payload) {
       const sId = String(r.siswa_id).trim();
 
       if (!validSiswaIds.has(sId)) {
-        return buildResponse(false, null, 'Akses ditolak: Terdapat siswa yang bukan anggota rombel penugasan ini.');
+        return buildResponse_(false, null, 'Akses ditolak: Terdapat siswa yang bukan anggota rombel penugasan ini.');
       }
 
-      const jHadir = parseAttendanceVal(r.jumlah_hadir, 'hadir');
-      const jSakit = parseAttendanceVal(r.jumlah_sakit, 'sakit');
-      const jIzin = parseAttendanceVal(r.jumlah_izin, 'izin');
-      const jAlpha = parseAttendanceVal(r.jumlah_alpha, 'alpa');
+      const jHadir = parseAttendanceVal_(r.jumlah_hadir, 'hadir');
+      const jSakit = parseAttendanceVal_(r.jumlah_sakit, 'sakit');
+      const jIzin = parseAttendanceVal_(r.jumlah_izin, 'izin');
+      const jAlpha = parseAttendanceVal_(r.jumlah_alpha, 'alpa');
       const cleanKet = r.keterangan ? String(r.keterangan).trim() : '';
 
       const existingRecord = rkData.rows.find(rec => rec.siswa_id === sId);
@@ -3660,18 +3867,18 @@ function apiSaveRekapKehadiranBatch(sessionToken, payload) {
       };
 
       if (existingRecord) {
-        updateSheetRow('rekap_kehadiran', existingRecord._rowIndex, fieldsToSave);
+        updateSheetRow_('rekap_kehadiran', existingRecord._rowIndex, fieldsToSave);
       } else {
-        fieldsToSave.id = getStableUUID();
+        fieldsToSave.id = getStableUUID_();
         fieldsToSave.created_at = nowIso;
-        appendSheetRow('rekap_kehadiran', fieldsToSave);
+        appendSheetRow_('rekap_kehadiran', fieldsToSave);
       }
       updatedCount++;
     }
 
-    return buildResponse(true, { updatedCount: updatedCount }, 'Rekap kehadiran berhasil disimpan.');
+    return buildResponse_(true, { updatedCount: updatedCount }, 'Rekap kehadiran berhasil disimpan.');
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal menyimpan rekap kehadiran.');
+    return buildResponse_(false, null, err.message || 'Gagal menyimpan rekap kehadiran.');
   } finally {
     if (lock) {
       try { lock.releaseLock(); } catch (e) {}
@@ -3689,20 +3896,20 @@ function apiSaveRekapKehadiranBatch(sessionToken, payload) {
  */
 function apiGetKelengkapanPenilaian(sessionToken, requestedWaliKelasId) {
   try {
-    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    const user = requireAuth_(sessionToken, ['kepala_sekolah', 'wali_kelas']);
 
-    const sData = getSheetDataBatch('siswa');
-    const mData = getSheetDataBatch('mata_pelajaran');
-    const wkData = getSheetDataBatch('wali_kelas');
-    const taData = getSheetDataBatch('tahun_ajaran');
-    const uData = getSheetDataBatch('user');
+    const sData = getSheetDataBatch_('siswa');
+    const mData = getSheetDataBatch_('mata_pelajaran');
+    const wkData = getSheetDataBatch_('wali_kelas');
+    const taData = getSheetDataBatch_('tahun_ajaran');
+    const uData = getSheetDataBatch_('user');
 
     let nData = { rows: [] };
     let skData = { rows: [] };
     let rkData = { rows: [] };
-    try { nData = getSheetDataBatch('nilai_mata_pelajaran'); } catch (e) {}
-    try { skData = getSheetDataBatch('nilai_sikap'); } catch (e) {}
-    try { rkData = getSheetDataBatch('rekap_kehadiran'); } catch (e) {}
+    try { nData = getSheetDataBatch_('nilai_mata_pelajaran'); } catch (e) {}
+    try { skData = getSheetDataBatch_('nilai_sikap'); } catch (e) {}
+    try { rkData = getSheetDataBatch_('rekap_kehadiran'); } catch (e) {}
 
     const activeYear = taData.rows.find(t => t.is_active === true || String(t.is_active).toLowerCase() === 'true');
 
@@ -3772,7 +3979,7 @@ function apiGetKelengkapanPenilaian(sessionToken, requestedWaliKelasId) {
         };
       });
 
-      return buildResponse(true, {
+      return buildResponse_(true, {
         isMultiClass: true,
         classes: classOverviews,
         activeYear: activeYear ? activeYear.tahun_ajaran + ' ' + activeYear.semester : '-'
@@ -3780,9 +3987,9 @@ function apiGetKelengkapanPenilaian(sessionToken, requestedWaliKelasId) {
     }
 
     // Detail kelas tunggal
-    const { assignment } = resolveWaliKelasScope(user, requestedWaliKelasId);
+    const { assignment } = resolveWaliKelasScope_(user, requestedWaliKelasId);
     if (!assignment) {
-      return buildResponse(false, null, 'Data penugasan kelas tidak ditemukan.');
+      return buildResponse_(false, null, 'Data penugasan kelas tidak ditemukan.');
     }
 
     const activeSiswa = sData.rows.filter(s => s.wali_kelas_id === assignment.id && (s.is_active === true || String(s.is_active).toLowerCase() === 'true'));
@@ -3825,7 +4032,7 @@ function apiGetKelengkapanPenilaian(sessionToken, requestedWaliKelasId) {
       overallStatus = 'Sebagian';
     }
 
-    return buildResponse(true, {
+    return buildResponse_(true, {
       isMultiClass: false,
       assignmentId: assignment.id,
       kelas: String(assignment.kelas),
@@ -3848,7 +4055,7 @@ function apiGetKelengkapanPenilaian(sessionToken, requestedWaliKelasId) {
       totalKehadiranPercent: totalKehadiranPct
     }, 'Kelengkapan penilaian kelas berhasil dimuat.');
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal memuat kelengkapan penilaian.');
+    return buildResponse_(false, null, err.message || 'Gagal memuat kelengkapan penilaian.');
   }
 }
 
@@ -3877,18 +4084,18 @@ function apiGetKelengkapanPenilaian(sessionToken, requestedWaliKelasId) {
  *   predikatRanges: Array<Object>
  * }}
  */
-function calculateClassRanking(assignmentId, cachedData) {
+function calculateClassRanking_(assignmentId, cachedData) {
   let sData = (cachedData && cachedData.sData);
   let mData = (cachedData && cachedData.mData);
   let nData = (cachedData && cachedData.nData);
   let prData = (cachedData && cachedData.prData);
   let wkData = (cachedData && cachedData.wkData);
 
-  try { if (!sData) sData = getSheetDataBatch('siswa'); } catch (e) { sData = { rows: [] }; }
-  try { if (!mData) mData = getSheetDataBatch('mata_pelajaran'); } catch (e) { mData = { rows: [] }; }
-  try { if (!nData) nData = getSheetDataBatch('nilai_mata_pelajaran'); } catch (e) { nData = { rows: [] }; }
-  try { if (!prData) prData = getSheetDataBatch('pengaturan_rapor'); } catch (e) { prData = { rows: [] }; }
-  try { if (!wkData) wkData = getSheetDataBatch('wali_kelas'); } catch (e) { wkData = { rows: [] }; }
+  try { if (!sData) sData = getSheetDataBatch_('siswa'); } catch (e) { sData = { rows: [] }; }
+  try { if (!mData) mData = getSheetDataBatch_('mata_pelajaran'); } catch (e) { mData = { rows: [] }; }
+  try { if (!nData) nData = getSheetDataBatch_('nilai_mata_pelajaran'); } catch (e) { nData = { rows: [] }; }
+  try { if (!prData) prData = getSheetDataBatch_('pengaturan_rapor'); } catch (e) { prData = { rows: [] }; }
+  try { if (!wkData) wkData = getSheetDataBatch_('wali_kelas'); } catch (e) { wkData = { rows: [] }; }
 
   const assignment = wkData.rows.find(w => w.id === assignmentId);
   const activeSiswa = sData.rows.filter(s =>
@@ -3938,7 +4145,7 @@ function calculateClassRanking(assignmentId, cachedData) {
         sumScore += score;
         mapelScores[m.id] = {
           nilai_akhir: score,
-          predikat: resolvePredikatScore(score, predikatRanges),
+          predikat: resolvePredikatScore_(score, predikatRanges),
           is_complete: true
         };
       } else {
@@ -4029,28 +4236,28 @@ function calculateClassRanking(assignmentId, cachedData) {
  */
 function apiGetRaporDigitalKelas(sessionToken, requestedWaliKelasId, sortBy, sortOrder) {
   try {
-    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
-    const { assignment, activeYear } = resolveWaliKelasScope(user, requestedWaliKelasId);
+    const user = requireAuth_(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    const { assignment, activeYear } = resolveWaliKelasScope_(user, requestedWaliKelasId);
 
     if (!assignment) {
-      return buildResponse(false, null, 'Data penugasan kelas tidak ditemukan.');
+      return buildResponse_(false, null, 'Data penugasan kelas tidak ditemukan.');
     }
 
-    const sData = getSheetDataBatch('siswa');
-    const mData = getSheetDataBatch('mata_pelajaran');
-    const uData = getSheetDataBatch('user');
-    const wkData = getSheetDataBatch('wali_kelas');
-    const taData = getSheetDataBatch('tahun_ajaran');
-    const pengData = getSheetDataBatch('pengaturan');
+    const sData = getSheetDataBatch_('siswa');
+    const mData = getSheetDataBatch_('mata_pelajaran');
+    const uData = getSheetDataBatch_('user');
+    const wkData = getSheetDataBatch_('wali_kelas');
+    const taData = getSheetDataBatch_('tahun_ajaran');
+    const pengData = getSheetDataBatch_('pengaturan');
 
     let nData = { rows: [] };
     let skData = { rows: [] };
     let rkData = { rows: [] };
     let prData = { rows: [] };
-    try { nData = getSheetDataBatch('nilai_mata_pelajaran'); } catch (e) {}
-    try { skData = getSheetDataBatch('nilai_sikap'); } catch (e) {}
-    try { rkData = getSheetDataBatch('rekap_kehadiran'); } catch (e) {}
-    try { prData = getSheetDataBatch('pengaturan_rapor'); } catch (e) {}
+    try { nData = getSheetDataBatch_('nilai_mata_pelajaran'); } catch (e) {}
+    try { skData = getSheetDataBatch_('nilai_sikap'); } catch (e) {}
+    try { rkData = getSheetDataBatch_('rekap_kehadiran'); } catch (e) {}
+    try { prData = getSheetDataBatch_('pengaturan_rapor'); } catch (e) {}
 
     // Profil Sekolah
     const schoolRow = pengData.rows[0] || {};
@@ -4069,7 +4276,7 @@ function apiGetRaporDigitalKelas(sessionToken, requestedWaliKelasId, sortBy, sor
     };
 
     // Hitung ranking kompetisi
-    const rankingRes = calculateClassRanking(assignment.id, { sData, mData, nData, prData, wkData });
+    const rankingRes = calculateClassRanking_(assignment.id, { sData, mData, nData, prData, wkData });
     const rankedStudents = rankingRes.rankedStudents;
 
     let readyCount = 0;
@@ -4203,7 +4410,7 @@ function apiGetRaporDigitalKelas(sessionToken, requestedWaliKelasId, sortBy, sor
       waliKelasNip: teacherInfo.nip
     };
 
-    return buildResponse(true, {
+    return buildResponse_(true, {
       schoolProfile: schoolProfile,
       pengaturan: schoolProfile,
       assignment: assignmentPayload,
@@ -4230,7 +4437,7 @@ function apiGetRaporDigitalKelas(sessionToken, requestedWaliKelasId, sortBy, sor
       isReadOnly: isLocked
     }, 'Data rapor digital kelas berhasil dimuat.');
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal memuat rapor digital kelas.');
+    return buildResponse_(false, null, err.message || 'Gagal memuat rapor digital kelas.');
   }
 }
 
@@ -4245,50 +4452,50 @@ function apiGetRaporDigitalKelas(sessionToken, requestedWaliKelasId, sortBy, sor
  */
 function apiGetRaporDigitalSiswa(sessionToken, siswaId) {
   try {
-    const user = requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    const user = requireAuth_(sessionToken, ['kepala_sekolah', 'wali_kelas']);
 
     if (!siswaId || typeof siswaId !== 'string') {
-      return buildResponse(false, null, 'ID siswa wajib disertakan.');
+      return buildResponse_(false, null, 'ID siswa wajib disertakan.');
     }
 
     const cleanSiswaId = String(siswaId).trim();
-    const sData = getSheetDataBatch('siswa');
+    const sData = getSheetDataBatch_('siswa');
     // Siswa historis (misal di tahun ajaran lampau) tetap harus bisa diakses rapornya
     const student = sData.rows.find(s => s.id === cleanSiswaId);
 
     if (!student) {
-      return buildResponse(false, null, 'Data siswa tidak ditemukan.');
+      return buildResponse_(false, null, 'Data siswa tidak ditemukan.');
     }
 
-    const wkData = getSheetDataBatch('wali_kelas');
+    const wkData = getSheetDataBatch_('wali_kelas');
     const assignment = wkData.rows.find(w => w.id === student.wali_kelas_id);
 
     if (!assignment) {
-      return buildResponse(false, null, 'Data penugasan kelas siswa tidak ditemukan.');
+      return buildResponse_(false, null, 'Data penugasan kelas siswa tidak ditemukan.');
     }
 
     // Proteksi IDOR: Wali kelas hanya boleh melihat siswa di rombel kelas yang diampunya
     if (user.role === 'wali_kelas') {
       if (assignment.user_id !== user.id) {
-        return buildResponse(false, null, 'Akses ditolak: Siswa ini bukan anggota rombel kelas yang Anda ampu.');
+        return buildResponse_(false, null, 'Akses ditolak: Siswa ini bukan anggota rombel kelas yang Anda ampu.');
       }
     }
 
-    const taData = getSheetDataBatch('tahun_ajaran');
+    const taData = getSheetDataBatch_('tahun_ajaran');
     const activeYear = taData.rows.find(t => t.id === assignment.tahun_ajaran_id);
 
-    const mData = getSheetDataBatch('mata_pelajaran');
-    const uData = getSheetDataBatch('user');
-    const pengData = getSheetDataBatch('pengaturan');
+    const mData = getSheetDataBatch_('mata_pelajaran');
+    const uData = getSheetDataBatch_('user');
+    const pengData = getSheetDataBatch_('pengaturan');
 
     let nData = { rows: [] };
     let skData = { rows: [] };
     let rkData = { rows: [] };
     let prData = { rows: [] };
-    try { nData = getSheetDataBatch('nilai_mata_pelajaran'); } catch (e) {}
-    try { skData = getSheetDataBatch('nilai_sikap'); } catch (e) {}
-    try { rkData = getSheetDataBatch('rekap_kehadiran'); } catch (e) {}
-    try { prData = getSheetDataBatch('pengaturan_rapor'); } catch (e) {}
+    try { nData = getSheetDataBatch_('nilai_mata_pelajaran'); } catch (e) {}
+    try { skData = getSheetDataBatch_('nilai_sikap'); } catch (e) {}
+    try { rkData = getSheetDataBatch_('rekap_kehadiran'); } catch (e) {}
+    try { prData = getSheetDataBatch_('pengaturan_rapor'); } catch (e) {}
 
     // Profil Sekolah
     const schoolRow = pengData.rows[0] || {};
@@ -4307,7 +4514,7 @@ function apiGetRaporDigitalSiswa(sessionToken, siswaId) {
     };
 
     // Hitung ranking kompetisi kelas
-    const rankingRes = calculateClassRanking(assignment.id, { sData, mData, nData, prData, wkData });
+    const rankingRes = calculateClassRanking_(assignment.id, { sData, mData, nData, prData, wkData });
     const thisStudentRank = rankingRes.rankedStudents.find(st => st.siswa_id === student.id);
 
     // Rincian Mata Pelajaran
@@ -4337,7 +4544,7 @@ function apiGetRaporDigitalSiswa(sessionToken, siswaId) {
 
       if (isComplete && grade.nilai_akhir !== '' && grade.nilai_akhir !== null && !isNaN(grade.nilai_akhir)) {
         finalScore = Number(grade.nilai_akhir);
-        predikat = resolvePredikatScore(finalScore, rankingRes.predikatRanges);
+        predikat = resolvePredikatScore_(finalScore, rankingRes.predikatRanges);
         completedCount++;
         sumScore += finalScore;
 
@@ -4426,7 +4633,7 @@ function apiGetRaporDigitalSiswa(sessionToken, siswaId) {
       totalSiswa: rankingRes.totalSiswa
     };
 
-    return buildResponse(true, {
+    return buildResponse_(true, {
       schoolProfile: schoolProfile,
       pengaturan: schoolProfile,
       sekolah: Object.assign({}, schoolProfile, {
@@ -4474,7 +4681,7 @@ function apiGetRaporDigitalSiswa(sessionToken, siswaId) {
       }
     }, 'Rapor digital siswa berhasil dimuat.');
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal memuat rapor digital siswa.');
+    return buildResponse_(false, null, err.message || 'Gagal memuat rapor digital siswa.');
   }
 }
 
@@ -4491,12 +4698,12 @@ function apiGetRaporDigitalSiswa(sessionToken, siswaId) {
  */
 function apiGetPengaturanSekolah(sessionToken) {
   try {
-    requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
-    const pengData = getSheetDataBatch('pengaturan');
-    const uData = getSheetDataBatch('user');
+    requireAuth_(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    const pengData = getSheetDataBatch_('pengaturan');
+    const uData = getSheetDataBatch_('user');
 
     if (pengData.rows.length === 0) {
-      return buildResponse(true, {
+      return buildResponse_(true, {
         id: '1',
         isConfigured: false,
         logo_sekolah: '',
@@ -4514,7 +4721,7 @@ function apiGetPengaturanSekolah(sessionToken) {
     const updater = row0.updated_by ? uData.rows.find(u => u.id === row0.updated_by) : null;
     const isConfigured = Boolean(row0.nama_sekolah && String(row0.nama_sekolah).trim().length > 0);
 
-    return buildResponse(true, {
+    return buildResponse_(true, {
       id: row0.id || '1',
       isConfigured: isConfigured,
       logo_sekolah: row0.logo_sekolah || '',
@@ -4527,7 +4734,7 @@ function apiGetPengaturanSekolah(sessionToken) {
       updated_at: row0.updated_at || ''
     }, 'Profil sekolah berhasil dimuat.');
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal memuat profil sekolah.');
+    return buildResponse_(false, null, err.message || 'Gagal memuat profil sekolah.');
   }
 }
 
@@ -4541,15 +4748,15 @@ function apiGetPengaturanSekolah(sessionToken) {
  */
 function apiSavePengaturanSekolah(sessionToken, payload) {
   let lock = null;
-  if (typeof LockService !== 'undefined') {
-    lock = LockService.getScriptLock();
-    lock.waitLock(30000);
-  }
   try {
-    const user = requireAuth(sessionToken, ['kepala_sekolah']);
+    if (typeof LockService !== 'undefined') {
+      lock = LockService.getScriptLock();
+      lock.waitLock(30000);
+    }
+    const user = requireAuth_(sessionToken, ['kepala_sekolah']);
 
     if (!payload || typeof payload !== 'object') {
-      return buildResponse(false, null, 'Data pengaturan profil sekolah tidak valid.');
+      return buildResponse_(false, null, 'Data pengaturan profil sekolah tidak valid.');
     }
 
     const cleanNamaSekolah = String(payload.nama_sekolah || '').trim();
@@ -4558,34 +4765,34 @@ function apiSavePengaturanSekolah(sessionToken, payload) {
     const cleanLogo = String(payload.logo_sekolah || '').trim();
 
     if (!cleanNamaSekolah) {
-      return buildResponse(false, null, 'Nama sekolah wajib diisi.');
+      return buildResponse_(false, null, 'Nama sekolah wajib diisi.');
     }
     if (cleanNamaSekolah.length < 2 || cleanNamaSekolah.length > 150) {
-      return buildResponse(false, null, 'Nama sekolah harus antara 2 hingga 150 karakter.');
+      return buildResponse_(false, null, 'Nama sekolah harus antara 2 hingga 150 karakter.');
     }
     if (cleanNamaKepsek.length > 100) {
-      return buildResponse(false, null, 'Nama Kepala Sekolah maksimal 100 karakter.');
+      return buildResponse_(false, null, 'Nama Kepala Sekolah maksimal 100 karakter.');
     }
     if (cleanNipKepsek.length > 30) {
-      return buildResponse(false, null, 'NIP Kepala Sekolah maksimal 30 karakter.');
+      return buildResponse_(false, null, 'NIP Kepala Sekolah maksimal 30 karakter.');
     }
     if (cleanNipKepsek && !/^[\d\s\.\-]+$/.test(cleanNipKepsek)) {
-      return buildResponse(false, null, 'NIP Kepala Sekolah hanya boleh memuat angka, spasi, titik, atau tanda hubung.');
+      return buildResponse_(false, null, 'NIP Kepala Sekolah hanya boleh memuat angka, spasi, titik, atau tanda hubung.');
     }
     if (cleanLogo.length > 500) {
-      return buildResponse(false, null, 'Tautan/referensi logo sekolah terlalu panjang (maksimal 500 karakter).');
+      return buildResponse_(false, null, 'Tautan/referensi logo sekolah terlalu panjang (maksimal 500 karakter).');
     }
     // Sanitasi format URL/Drive logo jika diisi
     if (cleanLogo && !cleanLogo.startsWith('http://') && !cleanLogo.startsWith('https://') && !cleanLogo.startsWith('data:image/') && !/^[a-zA-Z0-9_\-\.]+$/.test(cleanLogo)) {
-      return buildResponse(false, null, 'Format tautan atau ID file logo tidak valid.');
+      return buildResponse_(false, null, 'Format tautan atau ID file logo tidak valid.');
     }
 
     const nowIso = new Date().toISOString();
-    const pengData = getSheetDataBatch('pengaturan');
+    const pengData = getSheetDataBatch_('pengaturan');
 
     if (pengData.rows.length > 0) {
       const row0 = pengData.rows[0];
-      updateSheetRow('pengaturan', row0._rowIndex, {
+      updateSheetRow_('pengaturan', row0._rowIndex, {
         logo_sekolah: cleanLogo,
         nama_sekolah: cleanNamaSekolah,
         nama_kepala_sekolah: cleanNamaKepsek,
@@ -4594,7 +4801,7 @@ function apiSavePengaturanSekolah(sessionToken, payload) {
         updated_at: nowIso
       });
     } else {
-      appendSheetRow('pengaturan', {
+      appendSheetRow_('pengaturan', {
         id: '1',
         logo_sekolah: cleanLogo,
         nama_sekolah: cleanNamaSekolah,
@@ -4606,7 +4813,7 @@ function apiSavePengaturanSekolah(sessionToken, payload) {
       });
     }
 
-    return buildResponse(true, {
+    return buildResponse_(true, {
       isConfigured: true,
       nama_sekolah: cleanNamaSekolah,
       nama_kepala_sekolah: cleanNamaKepsek,
@@ -4614,7 +4821,7 @@ function apiSavePengaturanSekolah(sessionToken, payload) {
       logo_sekolah: cleanLogo
     }, 'Profil identitas sekolah berhasil diperbarui.');
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal menyimpan profil sekolah.');
+    return buildResponse_(false, null, err.message || 'Gagal menyimpan profil sekolah.');
   } finally {
     if (lock) {
       try { lock.releaseLock(); } catch (e) {}
@@ -4632,9 +4839,9 @@ function apiSavePengaturanSekolah(sessionToken, payload) {
  */
 function apiGetPengumumanList(sessionToken, searchKeyword) {
   try {
-    requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
-    const pData = getSheetDataBatch('pengumuman');
-    const uData = getSheetDataBatch('user');
+    requireAuth_(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    const pData = getSheetDataBatch_('pengumuman');
+    const uData = getSheetDataBatch_('user');
 
     const cleanKeyword = searchKeyword ? String(searchKeyword).trim().toLowerCase() : '';
 
@@ -4666,9 +4873,9 @@ function apiGetPengumumanList(sessionToken, searchKeyword) {
       return (b._rowIndex || 0) - (a._rowIndex || 0);
     });
 
-    return buildResponse(true, list, 'Daftar pengumuman berhasil dimuat.');
+    return buildResponse_(true, list, 'Daftar pengumuman berhasil dimuat.');
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal memuat daftar pengumuman.');
+    return buildResponse_(false, null, err.message || 'Gagal memuat daftar pengumuman.');
   }
 }
 
@@ -4682,15 +4889,15 @@ function apiGetPengumumanList(sessionToken, searchKeyword) {
  */
 function apiSavePengumuman(sessionToken, payload) {
   let lock = null;
-  if (typeof LockService !== 'undefined') {
-    lock = LockService.getScriptLock();
-    lock.waitLock(30000);
-  }
   try {
-    const user = requireAuth(sessionToken, ['kepala_sekolah']);
+    if (typeof LockService !== 'undefined') {
+      lock = LockService.getScriptLock();
+      lock.waitLock(30000);
+    }
+    const user = requireAuth_(sessionToken, ['kepala_sekolah']);
 
     if (!payload || typeof payload !== 'object') {
-      return buildResponse(false, null, 'Data pengumuman tidak valid.');
+      return buildResponse_(false, null, 'Data pengumuman tidak valid.');
     }
 
     const editId = payload.id ? String(payload.id).trim() : null;
@@ -4698,38 +4905,38 @@ function apiSavePengumuman(sessionToken, payload) {
     const cleanIsi = String(payload.isi || '').trim();
 
     if (!cleanJudul) {
-      return buildResponse(false, null, 'Judul pengumuman wajib diisi.');
+      return buildResponse_(false, null, 'Judul pengumuman wajib diisi.');
     }
     if (cleanJudul.length < 3 || cleanJudul.length > 150) {
-      return buildResponse(false, null, 'Judul pengumuman harus antara 3 hingga 150 karakter.');
+      return buildResponse_(false, null, 'Judul pengumuman harus antara 3 hingga 150 karakter.');
     }
 
     if (!cleanIsi) {
-      return buildResponse(false, null, 'Isi pengumuman wajib diisi.');
+      return buildResponse_(false, null, 'Isi pengumuman wajib diisi.');
     }
     if (cleanIsi.length < 5 || cleanIsi.length > 5000) {
-      return buildResponse(false, null, 'Isi pengumuman harus antara 5 hingga 5000 karakter.');
+      return buildResponse_(false, null, 'Isi pengumuman harus antara 5 hingga 5000 karakter.');
     }
 
     const nowIso = new Date().toISOString();
-    const pData = getSheetDataBatch('pengumuman');
+    const pData = getSheetDataBatch_('pengumuman');
 
     if (editId) {
       const existing = pData.rows.find(p => p.id === editId);
       if (!existing) {
-        return buildResponse(false, null, 'Pengumuman yang akan diedit tidak ditemukan.');
+        return buildResponse_(false, null, 'Pengumuman yang akan diedit tidak ditemukan.');
       }
 
-      updateSheetRow('pengumuman', existing._rowIndex, {
+      updateSheetRow_('pengumuman', existing._rowIndex, {
         judul: cleanJudul,
         isi: cleanIsi,
         updated_at: nowIso
       });
 
-      return buildResponse(true, { id: editId }, 'Pengumuman berhasil diperbarui.');
+      return buildResponse_(true, { id: editId }, 'Pengumuman berhasil diperbarui.');
     } else {
-      const newId = getStableUUID();
-      appendSheetRow('pengumuman', {
+      const newId = getStableUUID_();
+      appendSheetRow_('pengumuman', {
         id: newId,
         judul: cleanJudul,
         isi: cleanIsi,
@@ -4738,10 +4945,10 @@ function apiSavePengumuman(sessionToken, payload) {
         updated_at: nowIso
       });
 
-      return buildResponse(true, { id: newId }, 'Pengumuman baru berhasil dipublikasikan.');
+      return buildResponse_(true, { id: newId }, 'Pengumuman baru berhasil dipublikasikan.');
     }
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal menyimpan pengumuman.');
+    return buildResponse_(false, null, err.message || 'Gagal menyimpan pengumuman.');
   } finally {
     if (lock) {
       try { lock.releaseLock(); } catch (e) {}
@@ -4759,30 +4966,30 @@ function apiSavePengumuman(sessionToken, payload) {
  */
 function apiDeletePengumuman(sessionToken, pengumumanId) {
   let lock = null;
-  if (typeof LockService !== 'undefined') {
-    lock = LockService.getScriptLock();
-    lock.waitLock(30000);
-  }
   try {
-    requireAuth(sessionToken, ['kepala_sekolah']);
+    if (typeof LockService !== 'undefined') {
+      lock = LockService.getScriptLock();
+      lock.waitLock(30000);
+    }
+    requireAuth_(sessionToken, ['kepala_sekolah']);
 
     if (!pengumumanId || typeof pengumumanId !== 'string') {
-      return buildResponse(false, null, 'ID pengumuman wajib disertakan.');
+      return buildResponse_(false, null, 'ID pengumuman wajib disertakan.');
     }
 
     const cleanId = String(pengumumanId).trim();
-    const pData = getSheetDataBatch('pengumuman');
+    const pData = getSheetDataBatch_('pengumuman');
     const existing = pData.rows.find(p => p.id === cleanId);
 
     if (!existing) {
-      return buildResponse(false, null, 'Pengumuman tidak ditemukan.');
+      return buildResponse_(false, null, 'Pengumuman tidak ditemukan.');
     }
 
-    deleteSheetRow('pengumuman', existing._rowIndex);
+    deleteSheetRow_('pengumuman', existing._rowIndex);
 
-    return buildResponse(true, { id: cleanId }, 'Pengumuman berhasil dihapus.');
+    return buildResponse_(true, { id: cleanId }, 'Pengumuman berhasil dihapus.');
   } catch (err) {
-    return buildResponse(false, null, err.message || 'Gagal menghapus pengumuman.');
+    return buildResponse_(false, null, err.message || 'Gagal menghapus pengumuman.');
   } finally {
     if (lock) {
       try { lock.releaseLock(); } catch (e) {}
@@ -4814,22 +5021,49 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     AUTH_CONFIG,
     _localMemoryCache,
-    utf8ToBytes,
-    computePBKDF2,
-    generateSecureSalt,
-    hashPasswordPBKDF2,
-    constantTimeCompare,
-    verifyPassword,
-    SessionStore,
-    createSession,
-    getActiveSession,
-    destroySession,
-    getStableUUID,
-    appendSheetRow,
-    updateSheetRow,
-    deleteSheetRow,
-    getSheetDataBatch,
-    buildResponse,
+    LoginThrottle: LoginThrottle_,
+    LoginThrottle_,
+    utf8ToBytes: utf8ToBytes_,
+    utf8ToBytes_,
+    computePBKDF2: computePBKDF2_,
+    computePBKDF2_,
+    generateSecureSalt: generateSecureSalt_,
+    generateSecureSalt_,
+    hashPasswordPBKDF2: hashPasswordPBKDF2_,
+    hashPasswordPBKDF2_,
+    constantTimeCompare: constantTimeCompare_,
+    constantTimeCompare_,
+    verifyPassword: verifyPassword_,
+    verifyPassword_,
+    SessionStore: SessionStore_,
+    SessionStore_,
+    createSession: createSession_,
+    createSession_,
+    getActiveSession: getActiveSession_,
+    getActiveSession_,
+    destroySession: destroySession_,
+    destroySession_,
+    getStableUUID: getStableUUID_,
+    getStableUUID_,
+    appendSheetRow: appendSheetRow_,
+    appendSheetRow_,
+    updateSheetRow: updateSheetRow_,
+    updateSheetRow_,
+    deleteSheetRow: deleteSheetRow_,
+    deleteSheetRow_,
+    getSheetDataBatch: getSheetDataBatch_,
+    getSheetDataBatch_,
+    buildResponse: buildResponse_,
+    buildResponse_,
+    resolveWaliKelasScope: resolveWaliKelasScope_,
+    resolveWaliKelasScope_,
+    resolvePredikatScore: resolvePredikatScore_,
+    resolvePredikatScore_,
+    calculateClassRanking: calculateClassRanking_,
+    calculateClassRanking_,
+    requireAuth: requireAuth_,
+    requireAuth_,
+    // Public API endpoints
     apiLogin,
     apiLogout,
     apiGetSessionUser,
@@ -4847,7 +5081,6 @@ if (typeof module !== 'undefined' && module.exports) {
     apiSaveUser,
     apiToggleUserStatus,
     apiDeleteUser,
-    resolveWaliKelasScope,
     apiGetSiswaList,
     apiSaveSiswa,
     apiToggleSiswaStatus,
@@ -4856,7 +5089,6 @@ if (typeof module !== 'undefined' && module.exports) {
     apiSaveMataPelajaran,
     apiToggleMataPelajaranStatus,
     apiDeleteMataPelajaran,
-    resolvePredikatScore,
     apiGetPengaturanRapor,
     apiSavePengaturanRapor,
     apiGetNilaiMataPelajaran,
@@ -4866,7 +5098,6 @@ if (typeof module !== 'undefined' && module.exports) {
     apiGetRekapKehadiranList,
     apiSaveRekapKehadiranBatch,
     apiGetKelengkapanPenilaian,
-    calculateClassRanking,
     apiGetRaporDigitalKelas,
     apiGetRaporDigitalSiswa,
     apiGetPengaturanSekolah,
@@ -4874,7 +5105,6 @@ if (typeof module !== 'undefined' && module.exports) {
     apiGetPengumumanList,
     apiSavePengumuman,
     apiDeletePengumuman,
-    requireAuth,
     doGet
   };
 }

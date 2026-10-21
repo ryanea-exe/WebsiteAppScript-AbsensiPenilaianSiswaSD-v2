@@ -20,7 +20,7 @@
  *    menjalankan ulang setup akan melanjutkan pembuatan sheet yang belum ada secara
  *    aman dan idempoten tanpa merusak sheet yang sudah terbuat sebelumnya.
  * 6. INISIALISASI USER TERPISAH: Akun kepala sekolah dibuat melalui fungsi eksplisit
- *    initKepalaSekolahUser(), memverifikasi skema sheet user terlebih dahulu, dan
+ *    initKepalaSekolahUser_(), memverifikasi skema sheet user terlebih dahulu, dan
  *    menolak pembuatan jika skema tidak valid.
  *
  * CATATAN KEAMANAN PENTING (PASSWORD HASHING):
@@ -175,7 +175,7 @@ const SCHEMA_DEFINITIONS = Object.freeze({
  * Helper pembuat ID stabil berformat UUID v4
  * @return {string}
  */
-function generateUUID() {
+function generateUUID_() {
   if (typeof Utilities !== 'undefined' && typeof Utilities.getUuid === 'function') {
     return Utilities.getUuid();
   }
@@ -195,7 +195,7 @@ function generateUUID() {
  * @param {string} salt
  * @return {string}
  */
-function hashPasswordWithSalt(passwordPlaintext, salt) {
+function hashPasswordWithSalt_(passwordPlaintext, salt) {
   const combined = (passwordPlaintext || '') + ':' + (salt || '');
   if (typeof Utilities !== 'undefined' && typeof Utilities.computeDigest === 'function') {
     const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, combined, Utilities.Charset.UTF_8);
@@ -221,7 +221,7 @@ function hashPasswordWithSalt(passwordPlaintext, salt) {
  * @param {string} [spreadsheetId]
  * @return {GoogleAppsScript.Spreadsheet.Spreadsheet}
  */
-function getTargetSpreadsheet(spreadsheetId) {
+function getTargetSpreadsheet_(spreadsheetId) {
   if (spreadsheetId && typeof spreadsheetId === 'string' && spreadsheetId.trim() !== '') {
     if (typeof SpreadsheetApp !== 'undefined') {
       return SpreadsheetApp.openById(spreadsheetId.trim());
@@ -253,7 +253,7 @@ function getTargetSpreadsheet(spreadsheetId) {
   throw new Error(
     'Target Spreadsheet belum ditentukan secara eksplisit.\n' +
     'Solusi:\n' +
-    '1. Masukkan spreadsheetId sebagai argumen fungsi: setupSpreadsheetDatabase("YOUR_SPREADSHEET_ID"), ATAU\n' +
+    '1. Masukkan spreadsheetId sebagai argumen fungsi: setupSpreadsheetDatabase_("YOUR_SPREADSHEET_ID"), ATAU\n' +
     '2. Simpan properti SPREADSHEET_ID melalui PropertiesService.getScriptProperties().setProperty("SPREADSHEET_ID", "ID_ANDA"), ATAU\n' +
     '3. Jalankan script ini sebagai Container-bound Script langsung dari dalam Google Spreadsheet target.'
   );
@@ -269,10 +269,10 @@ function getTargetSpreadsheet(spreadsheetId) {
  * @param {string|GoogleAppsScript.Spreadsheet.Spreadsheet} [target]
  * @return {Object} Laporan audit skema
  */
-function validateSpreadsheetSchema(target) {
+function validateSpreadsheetSchema_(target) {
   const ss = (target && typeof target === 'object' && typeof target.getSheetByName === 'function')
     ? target
-    : getTargetSpreadsheet(typeof target === 'string' ? target : undefined);
+    : getTargetSpreadsheet_(typeof target === 'string' ? target : undefined);
 
   const report = {
     spreadsheetName: ss.getName ? ss.getName() : 'Spreadsheet',
@@ -509,7 +509,7 @@ function validateSpreadsheetSchema(target) {
  * @param {string|GoogleAppsScript.Spreadsheet.Spreadsheet} [target]
  * @return {Object} Laporan ringkasan eksekusi setup
  */
-function setupSpreadsheetDatabase(target) {
+function setupSpreadsheetDatabase_(target) {
   let lock;
   if (typeof LockService !== 'undefined') {
     lock = LockService.getScriptLock();
@@ -519,10 +519,10 @@ function setupSpreadsheetDatabase(target) {
   try {
     const ss = (target && typeof target === 'object' && typeof target.getSheetByName === 'function')
       ? target
-      : getTargetSpreadsheet(typeof target === 'string' ? target : undefined);
+      : getTargetSpreadsheet_(typeof target === 'string' ? target : undefined);
 
     // Langkah 1: Audit skema awal secara menyeluruh sebelum melakukan mutasi
-    const preValidation = validateSpreadsheetSchema(ss);
+    const preValidation = validateSpreadsheetSchema_(ss);
 
     if (!preValidation.canProceedSafely || preValidation.hasMismatches) {
       const errorMsg =
@@ -592,7 +592,7 @@ function setupSpreadsheetDatabase(target) {
         const currentLastRow = sheet.getLastRow();
         if (currentLastRow <= 1) {
           const now = new Date().toISOString();
-          const defaultSettingsId = generateUUID();
+          const defaultSettingsId = generateUUID_();
           // id, logo_sekolah, nama_sekolah, nama_kepala_sekolah, nip_kepala_sekolah, updated_by, created_at, updated_at
           const headersDef = SCHEMA_DEFINITIONS.pengaturan;
           const settingsRow = new Array(headersDef.length).fill('');
@@ -646,7 +646,7 @@ function setupSpreadsheetDatabase(target) {
  * @param {string} [credentials.nip]
  * @return {Object}
  */
-function initKepalaSekolahUser(target, credentials) {
+function initKepalaSekolahUser_(target, credentials) {
   if (!credentials || !credentials.username || !credentials.password || !credentials.nama) {
     throw new Error('Inisialisasi akun kepala sekolah membutuhkan username, password, dan nama yang lengkap.');
   }
@@ -672,10 +672,10 @@ function initKepalaSekolahUser(target, credentials) {
   try {
     const ss = (target && typeof target === 'object' && typeof target.getSheetByName === 'function')
       ? target
-      : getTargetSpreadsheet(typeof target === 'string' ? target : undefined);
+      : getTargetSpreadsheet_(typeof target === 'string' ? target : undefined);
 
     // Validasi skema sheet 'user' secara ketat sebelum membaca/menulis
-    const schemaAudit = validateSpreadsheetSchema(ss);
+    const schemaAudit = validateSpreadsheetSchema_(ss);
     const userAudit = schemaAudit.sheets.user;
 
     if (!userAudit || userAudit.status !== 'EXACT_MATCH') {
@@ -703,9 +703,9 @@ function initKepalaSekolahUser(target, credentials) {
     }
 
     // Buat salt acak dan hash password (TIDAK PERNAH MENYIMPAN PASSWORD MENTAH)
-    const salt = generateUUID().replace(/-/g, '');
-    const passwordHash = hashPasswordWithSalt(password, salt);
-    const userId = generateUUID();
+    const salt = generateUUID_().replace(/-/g, '');
+    const passwordHash = hashPasswordWithSalt_(password, salt);
+    const userId = generateUUID_();
     const now = new Date().toISOString();
 
     // Petakan kolom secara dinamis sesuai SCHEMA_DEFINITIONS.user
@@ -750,9 +750,9 @@ function initKepalaSekolahUser(target, credentials) {
  * Fungsi pembantu yang dapat dijalankan secara langsung dari Apps Script Editor
  * untuk mengaudit skema Spreadsheet tanpa risiko perubahan data.
  */
-function runSchemaCheckFromEditor() {
+function runSchemaCheckFromEditor_() {
   try {
-    const audit = validateSpreadsheetSchema();
+    const audit = validateSpreadsheetSchema_();
     Logger.log('=== HASIL AUDIT SKEMA SPREADSHEET ===');
     Logger.log(JSON.stringify(audit, null, 2));
     return audit;
@@ -766,9 +766,9 @@ function runSchemaCheckFromEditor() {
  * Fungsi pembantu yang dapat dijalankan secara langsung dari Apps Script Editor
  * untuk mengeksekusi setup database Spreadsheet secara idempoten.
  */
-function runSetupFromEditor() {
+function runSetupFromEditor_() {
   try {
-    const result = setupSpreadsheetDatabase();
+    const result = setupSpreadsheetDatabase_();
     Logger.log('=== HASIL SETUP DATABASE SPREADSHEET ===');
     Logger.log(JSON.stringify(result, null, 2));
     return result;
@@ -782,11 +782,21 @@ function runSetupFromEditor() {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     SCHEMA_DEFINITIONS,
-    generateUUID,
-    hashPasswordWithSalt,
-    getTargetSpreadsheet,
-    validateSpreadsheetSchema,
-    setupSpreadsheetDatabase,
-    initKepalaSekolahUser
+    generateUUID: generateUUID_,
+    generateUUID_,
+    hashPasswordWithSalt: hashPasswordWithSalt_,
+    hashPasswordWithSalt_,
+    getTargetSpreadsheet: getTargetSpreadsheet_,
+    getTargetSpreadsheet_,
+    validateSpreadsheetSchema: validateSpreadsheetSchema_,
+    validateSpreadsheetSchema_,
+    setupSpreadsheetDatabase: setupSpreadsheetDatabase_,
+    setupSpreadsheetDatabase_,
+    initKepalaSekolahUser: initKepalaSekolahUser_,
+    initKepalaSekolahUser_,
+    runSchemaCheckFromEditor: runSchemaCheckFromEditor_,
+    runSchemaCheckFromEditor_,
+    runSetupFromEditor: runSetupFromEditor_,
+    runSetupFromEditor_
   };
 }

@@ -3,3 +3,4 @@
 tests/**
 .chatgpt.md
 README.txt
+benchmark_diagnostic.gs
