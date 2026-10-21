@@ -1072,7 +1072,119 @@
           </div>
         </div>
 
-        <!-- VIEW CONTAINER: MODUL DALAM PERSIAPAN (Placeholder modular Phase 7-8) -->
+        <!-- VIEW CONTAINER: PENGUMUMAN RESMI SEKOLAH (Phase 8) -->
+        <div id="view-pengumuman" class="hidden space-y-6">
+          <!-- Header Bar -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
+            <div>
+              <div class="flex items-center gap-2 mb-1">
+                <h2 class="text-lg font-bold text-slate-900">Pengumuman Resmi Sekolah</h2>
+                <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">Komunikasi</span>
+              </div>
+              <p class="text-xs text-slate-500">Pemberitahuan, agenda kegiatan, dan arahan kedinasan dari Kepala Sekolah kepada seluruh dewan guru.</p>
+            </div>
+            <div id="pengumuman-action-bar" class="flex items-center gap-2">
+              <!-- Tombol Tambah (Khusus Kepala Sekolah) -->
+              <button type="button" id="btn-tambah-pengumuman" onclick="openModalTambahPengumuman()"
+                class="px-4 py-2 text-xs font-semibold text-white bg-blue-700 hover:bg-blue-800 rounded-xl shadow-xs transition-colors flex items-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                <span>Tambah Pengumuman</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Filter & Search Bar -->
+          <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between gap-3">
+            <div class="relative flex-1 max-w-sm">
+              <input type="text" id="pengumuman-search-input" oninput="handlePengumumanSearch()" placeholder="Cari judul atau isi pengumuman..."
+                class="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600 bg-slate-50 focus:bg-white transition-all">
+              <svg class="w-4 h-4 text-slate-400 absolute left-3 top-2.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            </div>
+            <div class="text-xs text-slate-400 font-medium" id="pengumuman-count-label">Memuat data...</div>
+          </div>
+
+          <!-- Daftar Pengumuman Container -->
+          <div id="pengumuman-list-container" class="space-y-3">
+            <div class="py-12 text-center text-slate-400 text-xs bg-white rounded-2xl border border-slate-200">
+              Memuat pengumuman sekolah...
+            </div>
+          </div>
+        </div>
+
+        <!-- VIEW CONTAINER: PENGATURAN IDENTITAS SEKOLAH (Phase 8) -->
+        <div id="view-pengaturan" class="hidden space-y-6">
+          <!-- Header Bar -->
+          <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
+            <div class="flex items-center gap-2 mb-1">
+              <h2 class="text-lg font-bold text-slate-900">Pengaturan Identitas &amp; Profil Sekolah</h2>
+              <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800">Master Data</span>
+            </div>
+            <p class="text-xs text-slate-500">Konfigurasi resmi identitas sekolah yang otomatis digunakan pada kop rapor digital, rekapitulasi nilai, serta dashboard institusi.</p>
+          </div>
+
+          <!-- Form Card Pengaturan -->
+          <div class="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-xs max-w-2xl">
+            <form id="form-pengaturan-sekolah" onsubmit="handlePengaturanSekolahSubmit(event)" class="space-y-5">
+              <div>
+                <label for="pengaturan-nama-sekolah" class="block text-xs font-bold text-slate-700 mb-1.5">
+                  Nama Resmi Sekolah <span class="text-red-500">*</span>
+                </label>
+                <input type="text" id="pengaturan-nama-sekolah" required maxlength="150" placeholder="Contoh: SD Negeri 1 Percobaan"
+                  class="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600 bg-slate-50 focus:bg-white transition-all font-semibold">
+                <p class="text-[10px] text-slate-400 mt-1">Nama ini akan tercetak pada kop rapor siswa dan tajuk rekap kelas.</p>
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label for="pengaturan-nama-kepsek" class="block text-xs font-bold text-slate-700 mb-1.5">
+                    Nama Kepala Sekolah
+                  </label>
+                  <input type="text" id="pengaturan-nama-kepsek" maxlength="100" placeholder="Contoh: Drs. H. Subagyo, M.Pd."
+                    class="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600 bg-slate-50 focus:bg-white transition-all">
+                  <p class="text-[10px] text-slate-400 mt-1">Nama pejabat yang berwenang menandatangani rapor.</p>
+                </div>
+                <div>
+                  <label for="pengaturan-nip-kepsek" class="block text-xs font-bold text-slate-700 mb-1.5">
+                    NIP Kepala Sekolah
+                  </label>
+                  <input type="text" id="pengaturan-nip-kepsek" maxlength="30" placeholder="Contoh: 197001011995011001"
+                    class="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600 bg-slate-50 focus:bg-white transition-all font-mono">
+                  <p class="text-[10px] text-slate-400 mt-1">Nomor Induk Pegawai Kepala Sekolah.</p>
+                </div>
+              </div>
+
+              <div>
+                <label for="pengaturan-logo-sekolah" class="block text-xs font-bold text-slate-700 mb-1.5">
+                  Tautan Logo Sekolah / ID File Drive
+                </label>
+                <div class="flex items-center gap-3">
+                  <input type="text" id="pengaturan-logo-sekolah" maxlength="500" placeholder="https://... atau ID File Drive"
+                    oninput="previewLogoSekolah()"
+                    class="flex-1 px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600 bg-slate-50 focus:bg-white transition-all font-mono">
+                  <div id="pengaturan-logo-preview" class="w-10 h-10 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden flex-shrink-0">
+                    <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                  </div>
+                </div>
+                <p class="text-[10px] text-slate-400 mt-1">Gunakan URL gambar valid (HTTPS) atau ID file Drive yang berstatus bagikan.</p>
+              </div>
+
+              <div id="pengaturan-meta-info" class="p-3 bg-slate-50 rounded-xl text-[11px] text-slate-500 border border-slate-100 flex items-center justify-between">
+                <span>Terakhir diperbarui: <strong id="pengaturan-last-updated">-</strong></span>
+                <span>Oleh: <strong id="pengaturan-last-updater">-</strong></span>
+              </div>
+
+              <div class="pt-2 flex items-center justify-end gap-2">
+                <button type="submit" id="btn-save-pengaturan"
+                  class="px-5 py-2.5 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                  <span>Simpan Perubahan</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- VIEW CONTAINER: MODUL DALAM PERSIAPAN (Placeholder modular Phase 9) -->
         <div id="view-placeholder" class="hidden">
           <div class="bg-white border border-slate-200 rounded-2xl p-8 sm:p-12 text-center shadow-xs">
             <div id="placeholder-icon-container" class="w-16 h-16 bg-blue-50 text-blue-700 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-blue-100">
@@ -1536,6 +1648,88 @@
   </div>
 
   <!-- ==================================================================== -->
+  <!-- MODAL FORM PENGUMUMAN (TAMBAH / EDIT - KHUSUS KEPALA SEKOLAH) -->
+  <!-- ==================================================================== -->
+  <div id="modal-pengumuman" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+    <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 flex flex-col max-h-[90vh]">
+      <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+        <div>
+          <h3 id="modal-pengumuman-title" class="text-base font-bold text-slate-900">Tambah Pengumuman Baru</h3>
+          <p class="text-xs text-slate-400">Publikasi arahan resmi kepada seluruh wali kelas</p>
+        </div>
+        <button type="button" onclick="closeModalPengumuman()" class="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <form id="form-pengumuman" onsubmit="handlePengumumanSubmit(event)" class="space-y-4 pt-4 flex-1 overflow-y-auto">
+        <input type="hidden" id="pengumuman-id">
+        <div>
+          <label for="pengumuman-judul" class="block text-xs font-bold text-slate-700 mb-1">
+            Judul Pengumuman <span class="text-red-500">*</span>
+          </label>
+          <input type="text" id="pengumuman-judul" required maxlength="150" placeholder="Misal: Rapat Evaluasi Pembelajaran Semester Ganjil"
+            class="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600 bg-slate-50 focus:bg-white transition-all font-semibold">
+          <p class="text-[10px] text-slate-400 mt-1">Maksimal 150 karakter.</p>
+        </div>
+
+        <div>
+          <label for="pengumuman-isi" class="block text-xs font-bold text-slate-700 mb-1">
+            Isi Pengumuman <span class="text-red-500">*</span>
+          </label>
+          <textarea id="pengumuman-isi" rows="6" required maxlength="5000" placeholder="Tuliskan isi pengumuman secara rinci..."
+            class="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-600 bg-slate-50 focus:bg-white transition-all"></textarea>
+          <p class="text-[10px] text-slate-400 mt-1">Maksimal 5000 karakter. Format paragraf akan dipertahankan.</p>
+        </div>
+
+        <div class="pt-3 flex items-center justify-end gap-2 border-t border-slate-100">
+          <button type="button" onclick="closeModalPengumuman()"
+            class="px-4 py-2 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors">
+            Batal
+          </button>
+          <button type="submit" id="btn-save-pengumuman"
+            class="px-5 py-2 text-xs font-semibold text-white bg-blue-700 hover:bg-blue-800 rounded-xl shadow-xs transition-colors flex items-center gap-1.5">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+            <span id="btn-save-pengumuman-text">Publikasikan</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==================================================================== -->
+  <!-- MODAL DETAIL BACA PENGUMUMAN (SEMUA ROLE) -->
+  <!-- ==================================================================== -->
+  <div id="modal-detail-pengumuman" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+    <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 flex flex-col max-h-[85vh]">
+      <div class="flex items-start justify-between pb-4 border-b border-slate-100 gap-4">
+        <div>
+          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 mb-1.5">
+            Pengumuman Resmi
+          </span>
+          <h3 id="detail-pengumuman-judul" class="text-base font-bold text-slate-900 leading-snug"></h3>
+          <p class="text-[11px] text-slate-400 mt-1">
+            Diterbitkan: <span id="detail-pengumuman-tanggal" class="font-medium text-slate-600"></span> &bull; Oleh: <span id="detail-pengumuman-author" class="font-medium text-slate-600"></span>
+          </p>
+        </div>
+        <button type="button" onclick="closeModalDetailPengumuman()" class="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors flex-shrink-0">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="py-5 overflow-y-auto text-xs text-slate-700 leading-relaxed whitespace-pre-wrap flex-1" id="detail-pengumuman-isi">
+      </div>
+
+      <div class="pt-3 flex items-center justify-end border-t border-slate-100">
+        <button type="button" onclick="closeModalDetailPengumuman()"
+          class="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors">
+          Tutup
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================================================================== -->
   <!-- JAVASCRIPT CLIENT-SIDE ARCHITECTURE -->
   <!-- ==================================================================== -->
   <script>
@@ -1912,6 +2106,8 @@
         document.getElementById('view-sikap-kehadiran').classList.add('hidden');
         document.getElementById('view-pengaturan-rapor').classList.add('hidden');
         document.getElementById('view-rapor-digital').classList.add('hidden');
+        document.getElementById('view-pengumuman').classList.add('hidden');
+        document.getElementById('view-pengaturan').classList.add('hidden');
         document.getElementById('view-placeholder').classList.add('hidden');
 
         // Buka tampilan yang relevan
@@ -1948,6 +2144,12 @@
         } else if (routeId === 'rapor_kelas' || routeId === 'rapor_sekolah') {
           document.getElementById('view-rapor-digital').classList.remove('hidden');
           loadRaporDigitalView();
+        } else if (routeId === 'pengumuman') {
+          document.getElementById('view-pengumuman').classList.remove('hidden');
+          loadPengumumanView();
+        } else if (routeId === 'pengaturan') {
+          document.getElementById('view-pengaturan').classList.remove('hidden');
+          loadPengaturanSekolahView();
         } else {
           document.getElementById('view-placeholder').classList.remove('hidden');
           document.getElementById('placeholder-title').textContent = targetRoute.title;
@@ -4886,6 +5088,361 @@
       window.addEventListener('afterprint', () => {
         document.body.classList.remove('print-individual');
       }, { once: true });
+    }
+
+    // ====================================================================
+    // MODUL PENGUMUMAN DAN PENGATURAN SEKOLAH (Phase 8)
+    // ====================================================================
+
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    // 1. Modul Pengumuman
+    async function loadPengumumanView() {
+      const container = document.getElementById('pengumuman-list-container');
+      const countLabel = document.getElementById('pengumuman-count-label');
+      const btnTambah = document.getElementById('btn-tambah-pengumuman');
+
+      if (APP_STATE.user && APP_STATE.user.role === 'kepala_sekolah') {
+        btnTambah.classList.remove('hidden');
+      } else {
+        btnTambah.classList.add('hidden');
+      }
+
+      container.innerHTML = `
+        <div class="py-12 text-center space-y-3 bg-white rounded-2xl border border-slate-200">
+          <div class="w-7 h-7 border-3 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+          <p class="text-xs font-semibold text-slate-500">Memuat pengumuman resmi sekolah...</p>
+        </div>
+      `;
+
+      try {
+        const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+        const res = await callBackend('apiGetPengumumanList', token);
+
+        if (res && res.success && Array.isArray(res.data)) {
+          APP_STATE.pengumumanList = res.data;
+          renderPengumumanList(res.data);
+        } else {
+          container.innerHTML = `
+            <div class="py-12 text-center text-red-500 text-xs bg-white rounded-2xl border border-slate-200">
+              ${(res && res.message) || 'Gagal memuat pengumuman.'}
+            </div>
+          `;
+          countLabel.textContent = '0 pengumuman';
+        }
+      } catch (err) {
+        container.innerHTML = `
+          <div class="py-12 text-center text-red-500 text-xs bg-white rounded-2xl border border-slate-200">
+            Terjadi kesalahan koneksi saat memuat pengumuman.
+          </div>
+        `;
+        countLabel.textContent = '0 pengumuman';
+      }
+    }
+
+    function renderPengumumanList(list, filterKeyword = '') {
+      const container = document.getElementById('pengumuman-list-container');
+      const countLabel = document.getElementById('pengumuman-count-label');
+      if (!Array.isArray(list)) return;
+
+      let displayList = list;
+      if (filterKeyword) {
+        const q = filterKeyword.toLowerCase().trim();
+        displayList = displayList.filter(p =>
+          (p.judul && p.judul.toLowerCase().includes(q)) ||
+          (p.isi && p.isi.toLowerCase().includes(q))
+        );
+      }
+
+      countLabel.textContent = `${displayList.length} pengumuman terdaftar`;
+
+      if (displayList.length === 0) {
+        container.innerHTML = `
+          <div class="py-16 text-center bg-white rounded-2xl border border-slate-200 p-8">
+            <div class="w-12 h-12 bg-slate-50 text-slate-400 rounded-2xl flex items-center justify-center mx-auto mb-3 border border-slate-100">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/></svg>
+            </div>
+            <p class="text-xs font-bold text-slate-700 mb-1">${filterKeyword ? 'Tidak ditemukan pengumuman yang cocok.' : 'Belum ada pengumuman yang diterbitkan.'}</p>
+            <p class="text-[11px] text-slate-400 max-w-sm mx-auto">${filterKeyword ? 'Coba gunakan kata kunci pencarian yang lain.' : 'Pengumuman resmi dari Kepala Sekolah akan muncul di sini.'}</p>
+          </div>
+        `;
+        return;
+      }
+
+      const isKepsek = (APP_STATE.user && APP_STATE.user.role === 'kepala_sekolah');
+
+      container.innerHTML = displayList.map(p => {
+        let tglFormatted = '-';
+        if (p.created_at) {
+          try {
+            tglFormatted = new Date(p.created_at).toLocaleDateString('id-ID', {
+              day: 'numeric',
+              month: 'long',
+              year: 'numeric'
+            });
+          } catch (e) {
+            tglFormatted = p.created_at;
+          }
+        }
+
+        const snippet = p.isi ? (p.isi.length > 140 ? p.isi.slice(0, 140) + '...' : p.isi) : '-';
+
+        return `
+          <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs hover:border-slate-300 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div class="space-y-1.5 flex-1 min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">
+                  ${escapeHtml(tglFormatted)}
+                </span>
+                <span class="text-[11px] text-slate-400 font-medium">Oleh: ${escapeHtml(p.dibuat_oleh_nama || 'Kepala Sekolah')}</span>
+              </div>
+              <h3 class="text-sm font-bold text-slate-900 truncate">${escapeHtml(p.judul)}</h3>
+              <p class="text-xs text-slate-500 line-clamp-2 leading-relaxed">${escapeHtml(snippet)}</p>
+            </div>
+            <div class="flex items-center gap-2 flex-shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+              <button type="button" onclick="openModalDetailPengumuman('${p.id}')"
+                class="px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors flex items-center gap-1 shadow-2xs">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                <span>Baca</span>
+              </button>
+              ${isKepsek ? `
+                <button type="button" onclick="openModalEditPengumuman('${p.id}')"
+                  class="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors flex items-center gap-1">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                  <span>Edit</span>
+                </button>
+                <button type="button" onclick="confirmDeletePengumuman('${p.id}')"
+                  class="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-xl transition-colors" title="Hapus Pengumuman">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                </button>
+              ` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function handlePengumumanSearch() {
+      const q = document.getElementById('pengumuman-search-input').value;
+      if (APP_STATE.pengumumanList) {
+        renderPengumumanList(APP_STATE.pengumumanList, q);
+      }
+    }
+
+    function openModalTambahPengumuman() {
+      document.getElementById('pengumuman-id').value = '';
+      document.getElementById('form-pengumuman').reset();
+      document.getElementById('modal-pengumuman-title').textContent = 'Tambah Pengumuman Baru';
+      document.getElementById('btn-save-pengumuman-text').textContent = 'Publikasikan';
+      document.getElementById('modal-pengumuman').classList.remove('hidden');
+    }
+
+    function openModalEditPengumuman(id) {
+      if (!Array.isArray(APP_STATE.pengumumanList)) return;
+      const item = APP_STATE.pengumumanList.find(p => p.id === id);
+      if (!item) return;
+
+      document.getElementById('pengumuman-id').value = item.id;
+      document.getElementById('pengumuman-judul').value = item.judul || '';
+      document.getElementById('pengumuman-isi').value = item.isi || '';
+      document.getElementById('modal-pengumuman-title').textContent = 'Edit Pengumuman';
+      document.getElementById('btn-save-pengumuman-text').textContent = 'Simpan Perubahan';
+      document.getElementById('modal-pengumuman').classList.remove('hidden');
+    }
+
+    function closeModalPengumuman() {
+      document.getElementById('modal-pengumuman').classList.add('hidden');
+    }
+
+    async function handlePengumumanSubmit(event) {
+      event.preventDefault();
+      const id = document.getElementById('pengumuman-id').value.trim();
+      const judul = document.getElementById('pengumuman-judul').value.trim();
+      const isi = document.getElementById('pengumuman-isi').value.trim();
+      const submitBtn = document.getElementById('btn-save-pengumuman');
+
+      if (!judul || !isi) {
+        showToast('Judul dan isi pengumuman wajib diisi.', 'error');
+        return;
+      }
+
+      submitBtn.disabled = true;
+      try {
+        const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+        const res = await callBackend('apiSavePengumuman', token, { id: id || undefined, judul, isi });
+
+        if (res && res.success) {
+          showToast(res.message || 'Pengumuman berhasil disimpan.', 'success');
+          closeModalPengumuman();
+          loadPengumumanView();
+        } else {
+          showToast((res && res.message) || 'Gagal menyimpan pengumuman.', 'error');
+        }
+      } catch (err) {
+        showToast('Terjadi kesalahan koneksi saat menyimpan pengumuman.', 'error');
+      } finally {
+        submitBtn.disabled = false;
+      }
+    }
+
+    function confirmDeletePengumuman(id) {
+      openConfirmModal(
+        'Hapus Pengumuman',
+        'Apakah Anda yakin ingin menghapus pengumuman ini secara permanen? Tindakan ini tidak dapat dibatalkan.',
+        'bg-red-600',
+        async () => {
+          try {
+            const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+            const res = await callBackend('apiDeletePengumuman', token, id);
+            if (res && res.success) {
+              showToast(res.message || 'Pengumuman berhasil dihapus.', 'success');
+              loadPengumumanView();
+            } else {
+              showToast((res && res.message) || 'Gagal menghapus pengumuman.', 'error');
+            }
+          } catch (e) {
+            showToast('Kesalahan koneksi saat menghapus pengumuman.', 'error');
+          }
+        }
+      );
+    }
+
+    function openModalDetailPengumuman(id) {
+      if (!Array.isArray(APP_STATE.pengumumanList)) return;
+      const item = APP_STATE.pengumumanList.find(p => p.id === id);
+      if (!item) return;
+
+      document.getElementById('detail-pengumuman-judul').textContent = item.judul || '-';
+      let tgl = '-';
+      if (item.created_at) {
+        try {
+          tgl = new Date(item.created_at).toLocaleDateString('id-ID', {
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          });
+        } catch (e) {
+          tgl = item.created_at;
+        }
+      }
+      document.getElementById('detail-pengumuman-tanggal').textContent = tgl;
+      document.getElementById('detail-pengumuman-author').textContent = item.dibuat_oleh_nama || 'Kepala Sekolah';
+      document.getElementById('detail-pengumuman-isi').textContent = item.isi || '';
+
+      document.getElementById('modal-detail-pengumuman').classList.remove('hidden');
+    }
+
+    function closeModalDetailPengumuman() {
+      document.getElementById('modal-detail-pengumuman').classList.add('hidden');
+    }
+
+    // 2. Modul Pengaturan Profil Sekolah
+    async function loadPengaturanSekolahView() {
+      const btnSave = document.getElementById('btn-save-pengaturan');
+      btnSave.disabled = true;
+
+      try {
+        const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+        const res = await callBackend('apiGetPengaturanSekolah', token);
+
+        if (res && res.success && res.data) {
+          const d = res.data;
+          document.getElementById('pengaturan-nama-sekolah').value = d.nama_sekolah || '';
+          document.getElementById('pengaturan-nama-kepsek').value = d.nama_kepala_sekolah || '';
+          document.getElementById('pengaturan-nip-kepsek').value = d.nip_kepala_sekolah || '';
+          document.getElementById('pengaturan-logo-sekolah').value = d.logo_sekolah || '';
+
+          let updatedTxt = '-';
+          if (d.updated_at) {
+            try {
+              updatedTxt = new Date(d.updated_at).toLocaleDateString('id-ID', {
+                day: 'numeric',
+                month: 'long',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+              });
+            } catch (e) {
+              updatedTxt = d.updated_at;
+            }
+          }
+          document.getElementById('pengaturan-last-updated').textContent = updatedTxt;
+          document.getElementById('pengaturan-last-updater').textContent = d.updated_by_nama || '-';
+
+          previewLogoSekolah();
+        } else {
+          showToast((res && res.message) || 'Gagal memuat profil sekolah.', 'error');
+        }
+      } catch (err) {
+        showToast('Terjadi kesalahan koneksi saat memuat pengaturan sekolah.', 'error');
+      } finally {
+        btnSave.disabled = false;
+      }
+    }
+
+    function previewLogoSekolah() {
+      const input = document.getElementById('pengaturan-logo-sekolah');
+      const preview = document.getElementById('pengaturan-logo-preview');
+      const val = input.value.trim();
+
+      if (val && (val.startsWith('http://') || val.startsWith('https://') || val.startsWith('data:image/'))) {
+        preview.innerHTML = `<img src="${val}" alt="Logo" class="w-full h-full object-contain" onerror="this.onerror=null; this.parentElement.innerHTML='<svg class=\\'w-5 h-5 text-red-400\\' fill=\\'none\\' stroke=\\'currentColor\\' viewBox=\\'0 0 24 24\\'><path stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\' stroke-width=\\'2\\' d=\\'M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z\\'/></svg>';">`;
+      } else {
+        preview.innerHTML = `<svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>`;
+      }
+    }
+
+    async function handlePengaturanSekolahSubmit(event) {
+      event.preventDefault();
+      const namaSekolah = document.getElementById('pengaturan-nama-sekolah').value.trim();
+      const namaKepsek = document.getElementById('pengaturan-nama-kepsek').value.trim();
+      const nipKepsek = document.getElementById('pengaturan-nip-kepsek').value.trim();
+      const logoSekolah = document.getElementById('pengaturan-logo-sekolah').value.trim();
+      const btnSave = document.getElementById('btn-save-pengaturan');
+
+      if (!namaSekolah) {
+        showToast('Nama sekolah wajib diisi.', 'error');
+        return;
+      }
+
+      btnSave.disabled = true;
+      try {
+        const token = APP_STATE.token || localStorage.getItem(STORAGE_KEY);
+        const res = await callBackend('apiSavePengaturanSekolah', token, {
+          nama_sekolah: namaSekolah,
+          nama_kepala_sekolah: namaKepsek,
+          nip_kepala_sekolah: nipKepsek,
+          logo_sekolah: logoSekolah
+        });
+
+        if (res && res.success) {
+          showToast(res.message || 'Profil identitas sekolah berhasil diperbarui.', 'success');
+          // Update state aplikasi lokal
+          if (APP_STATE.dashboardData && APP_STATE.dashboardData.schoolProfile) {
+            APP_STATE.dashboardData.schoolProfile.namaSekolah = namaSekolah;
+            APP_STATE.dashboardData.schoolProfile.namaKepalaSekolah = namaKepsek;
+            APP_STATE.dashboardData.schoolProfile.nipKepalaSekolah = nipKepsek;
+            APP_STATE.dashboardData.schoolProfile.logoSekolah = logoSekolah;
+          }
+          loadPengaturanSekolahView();
+        } else {
+          showToast((res && res.message) || 'Gagal menyimpan pengaturan sekolah.', 'error');
+        }
+      } catch (err) {
+        showToast('Terjadi kesalahan koneksi saat menyimpan pengaturan sekolah.', 'error');
+      } finally {
+        btnSave.disabled = false;
+      }
     }
 
     // Modal Konfirmasi Umum

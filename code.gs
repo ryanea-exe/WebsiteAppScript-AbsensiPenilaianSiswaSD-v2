@@ -823,6 +823,26 @@ function apiGetInitialDashboard(sessionToken) {
       // Abaikan jika belum ada tahun ajaran
     }
 
+    // 3. Pengumuman Terbaru
+    let recentAnnouncements = [];
+    try {
+      const pData = getSheetDataBatch('pengumuman');
+      recentAnnouncements = pData.rows
+        .map(p => ({
+          id: p.id,
+          _rowIndex: p._rowIndex,
+          judul: p.judul,
+          isi: p.isi,
+          created_at: p.created_at || ''
+        }))
+        .sort((a, b) => {
+          const diff = new Date(b.created_at || 0) - new Date(a.created_at || 0);
+          if (diff !== 0) return diff;
+          return (b._rowIndex || 0) - (a._rowIndex || 0);
+        })
+        .slice(0, 3);
+    } catch (e) {}
+
     const payload = {
       user: {
         id: user.id,
@@ -832,7 +852,8 @@ function apiGetInitialDashboard(sessionToken) {
         foto: user.foto || ''
       },
       schoolProfile: schoolProfile,
-      activeYear: activeYear
+      activeYear: activeYear,
+      recentAnnouncements: recentAnnouncements
     };
 
     if (user.role === 'kepala_sekolah') {
@@ -4408,6 +4429,12 @@ function apiGetRaporDigitalSiswa(sessionToken, siswaId) {
     return buildResponse(true, {
       schoolProfile: schoolProfile,
       pengaturan: schoolProfile,
+      sekolah: Object.assign({}, schoolProfile, {
+        nama_sekolah: schoolProfile.namaSekolah,
+        nama_kepala_sekolah: schoolProfile.namaKepalaSekolah,
+        nip_kepala_sekolah: schoolProfile.nipKepalaSekolah,
+        logo_sekolah: schoolProfile.logoSekolah
+      }),
       student: studentInfo,
       siswa: studentInfo,
       assignment: assignmentInfo,
@@ -4452,7 +4479,319 @@ function apiGetRaporDigitalSiswa(sessionToken, siswaId) {
 }
 
 // ============================================================================
-// 8. ENTRYPOINT APLIKASI WEB (doGet)
+// 8. MODUL PENGATURAN PROFIL SEKOLAH & PENGUMUMAN (Phase 8)
+// ============================================================================
+
+/**
+ * Mengambil profil pengaturan identitas sekolah.
+ * Otorisasi: kepala_sekolah atau wali_kelas.
+ *
+ * @param {string} sessionToken
+ * @return {{ success: boolean, data: Object|null, message: string }}
+ */
+function apiGetPengaturanSekolah(sessionToken) {
+  try {
+    requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    const pengData = getSheetDataBatch('pengaturan');
+    const uData = getSheetDataBatch('user');
+
+    if (pengData.rows.length === 0) {
+      return buildResponse(true, {
+        id: '1',
+        isConfigured: false,
+        logo_sekolah: '',
+        nama_sekolah: '',
+        nama_kepala_sekolah: '',
+        nip_kepala_sekolah: '',
+        updated_by: '',
+        updated_by_nama: '-',
+        created_at: '',
+        updated_at: ''
+      }, 'Profil sekolah berhasil dimuat.');
+    }
+
+    const row0 = pengData.rows[0];
+    const updater = row0.updated_by ? uData.rows.find(u => u.id === row0.updated_by) : null;
+    const isConfigured = Boolean(row0.nama_sekolah && String(row0.nama_sekolah).trim().length > 0);
+
+    return buildResponse(true, {
+      id: row0.id || '1',
+      isConfigured: isConfigured,
+      logo_sekolah: row0.logo_sekolah || '',
+      nama_sekolah: row0.nama_sekolah || '',
+      nama_kepala_sekolah: row0.nama_kepala_sekolah || '',
+      nip_kepala_sekolah: row0.nip_kepala_sekolah || '',
+      updated_by: row0.updated_by || '',
+      updated_by_nama: updater ? updater.nama : '-',
+      created_at: row0.created_at || '',
+      updated_at: row0.updated_at || ''
+    }, 'Profil sekolah berhasil dimuat.');
+  } catch (err) {
+    return buildResponse(false, null, err.message || 'Gagal memuat profil sekolah.');
+  }
+}
+
+/**
+ * Menyimpan profil pengaturan identitas sekolah (nama sekolah, kepsek, NIP, logo).
+ * Otorisasi: kepala_sekolah saja.
+ *
+ * @param {string} sessionToken
+ * @param {Object} payload
+ * @return {{ success: boolean, data: Object|null, message: string }}
+ */
+function apiSavePengaturanSekolah(sessionToken, payload) {
+  let lock = null;
+  if (typeof LockService !== 'undefined') {
+    lock = LockService.getScriptLock();
+    lock.waitLock(30000);
+  }
+  try {
+    const user = requireAuth(sessionToken, ['kepala_sekolah']);
+
+    if (!payload || typeof payload !== 'object') {
+      return buildResponse(false, null, 'Data pengaturan profil sekolah tidak valid.');
+    }
+
+    const cleanNamaSekolah = String(payload.nama_sekolah || '').trim();
+    const cleanNamaKepsek = String(payload.nama_kepala_sekolah || '').trim();
+    const cleanNipKepsek = String(payload.nip_kepala_sekolah || '').trim();
+    const cleanLogo = String(payload.logo_sekolah || '').trim();
+
+    if (!cleanNamaSekolah) {
+      return buildResponse(false, null, 'Nama sekolah wajib diisi.');
+    }
+    if (cleanNamaSekolah.length < 2 || cleanNamaSekolah.length > 150) {
+      return buildResponse(false, null, 'Nama sekolah harus antara 2 hingga 150 karakter.');
+    }
+    if (cleanNamaKepsek.length > 100) {
+      return buildResponse(false, null, 'Nama Kepala Sekolah maksimal 100 karakter.');
+    }
+    if (cleanNipKepsek.length > 30) {
+      return buildResponse(false, null, 'NIP Kepala Sekolah maksimal 30 karakter.');
+    }
+    if (cleanNipKepsek && !/^[\d\s\.\-]+$/.test(cleanNipKepsek)) {
+      return buildResponse(false, null, 'NIP Kepala Sekolah hanya boleh memuat angka, spasi, titik, atau tanda hubung.');
+    }
+    if (cleanLogo.length > 500) {
+      return buildResponse(false, null, 'Tautan/referensi logo sekolah terlalu panjang (maksimal 500 karakter).');
+    }
+    // Sanitasi format URL/Drive logo jika diisi
+    if (cleanLogo && !cleanLogo.startsWith('http://') && !cleanLogo.startsWith('https://') && !cleanLogo.startsWith('data:image/') && !/^[a-zA-Z0-9_\-\.]+$/.test(cleanLogo)) {
+      return buildResponse(false, null, 'Format tautan atau ID file logo tidak valid.');
+    }
+
+    const nowIso = new Date().toISOString();
+    const pengData = getSheetDataBatch('pengaturan');
+
+    if (pengData.rows.length > 0) {
+      const row0 = pengData.rows[0];
+      updateSheetRow('pengaturan', row0._rowIndex, {
+        logo_sekolah: cleanLogo,
+        nama_sekolah: cleanNamaSekolah,
+        nama_kepala_sekolah: cleanNamaKepsek,
+        nip_kepala_sekolah: cleanNipKepsek,
+        updated_by: user.id,
+        updated_at: nowIso
+      });
+    } else {
+      appendSheetRow('pengaturan', {
+        id: '1',
+        logo_sekolah: cleanLogo,
+        nama_sekolah: cleanNamaSekolah,
+        nama_kepala_sekolah: cleanNamaKepsek,
+        nip_kepala_sekolah: cleanNipKepsek,
+        updated_by: user.id,
+        created_at: nowIso,
+        updated_at: nowIso
+      });
+    }
+
+    return buildResponse(true, {
+      isConfigured: true,
+      nama_sekolah: cleanNamaSekolah,
+      nama_kepala_sekolah: cleanNamaKepsek,
+      nip_kepala_sekolah: cleanNipKepsek,
+      logo_sekolah: cleanLogo
+    }, 'Profil identitas sekolah berhasil diperbarui.');
+  } catch (err) {
+    return buildResponse(false, null, err.message || 'Gagal menyimpan profil sekolah.');
+  } finally {
+    if (lock) {
+      try { lock.releaseLock(); } catch (e) {}
+    }
+  }
+}
+
+/**
+ * Mengambil daftar pengumuman resmi sekolah.
+ * Otorisasi: kepala_sekolah atau wali_kelas.
+ *
+ * @param {string} sessionToken
+ * @param {string} [searchKeyword]
+ * @return {{ success: boolean, data: Array<Object>|null, message: string }}
+ */
+function apiGetPengumumanList(sessionToken, searchKeyword) {
+  try {
+    requireAuth(sessionToken, ['kepala_sekolah', 'wali_kelas']);
+    const pData = getSheetDataBatch('pengumuman');
+    const uData = getSheetDataBatch('user');
+
+    const cleanKeyword = searchKeyword ? String(searchKeyword).trim().toLowerCase() : '';
+
+    let list = pData.rows.map(p => {
+      const author = uData.rows.find(u => u.id === p.dibuat_oleh);
+      return {
+        id: p.id,
+        _rowIndex: p._rowIndex,
+        judul: p.judul,
+        isi: p.isi,
+        dibuat_oleh: p.dibuat_oleh,
+        dibuat_oleh_nama: author ? author.nama : 'Kepala Sekolah',
+        created_at: p.created_at || '',
+        updated_at: p.updated_at || ''
+      };
+    });
+
+    if (cleanKeyword) {
+      list = list.filter(p =>
+        (p.judul && p.judul.toLowerCase().includes(cleanKeyword)) ||
+        (p.isi && p.isi.toLowerCase().includes(cleanKeyword))
+      );
+    }
+
+    // Urutkan descending berdasarkan created_at (terbaru di atas), tie-breaker _rowIndex
+    list.sort((a, b) => {
+      const diff = new Date(b.created_at || 0) - new Date(a.created_at || 0);
+      if (diff !== 0) return diff;
+      return (b._rowIndex || 0) - (a._rowIndex || 0);
+    });
+
+    return buildResponse(true, list, 'Daftar pengumuman berhasil dimuat.');
+  } catch (err) {
+    return buildResponse(false, null, err.message || 'Gagal memuat daftar pengumuman.');
+  }
+}
+
+/**
+ * Menyimpan pengumuman (tambah baru atau edit).
+ * Otorisasi: kepala_sekolah saja.
+ *
+ * @param {string} sessionToken
+ * @param {Object} payload
+ * @return {{ success: boolean, data: Object|null, message: string }}
+ */
+function apiSavePengumuman(sessionToken, payload) {
+  let lock = null;
+  if (typeof LockService !== 'undefined') {
+    lock = LockService.getScriptLock();
+    lock.waitLock(30000);
+  }
+  try {
+    const user = requireAuth(sessionToken, ['kepala_sekolah']);
+
+    if (!payload || typeof payload !== 'object') {
+      return buildResponse(false, null, 'Data pengumuman tidak valid.');
+    }
+
+    const editId = payload.id ? String(payload.id).trim() : null;
+    const cleanJudul = String(payload.judul || '').trim();
+    const cleanIsi = String(payload.isi || '').trim();
+
+    if (!cleanJudul) {
+      return buildResponse(false, null, 'Judul pengumuman wajib diisi.');
+    }
+    if (cleanJudul.length < 3 || cleanJudul.length > 150) {
+      return buildResponse(false, null, 'Judul pengumuman harus antara 3 hingga 150 karakter.');
+    }
+
+    if (!cleanIsi) {
+      return buildResponse(false, null, 'Isi pengumuman wajib diisi.');
+    }
+    if (cleanIsi.length < 5 || cleanIsi.length > 5000) {
+      return buildResponse(false, null, 'Isi pengumuman harus antara 5 hingga 5000 karakter.');
+    }
+
+    const nowIso = new Date().toISOString();
+    const pData = getSheetDataBatch('pengumuman');
+
+    if (editId) {
+      const existing = pData.rows.find(p => p.id === editId);
+      if (!existing) {
+        return buildResponse(false, null, 'Pengumuman yang akan diedit tidak ditemukan.');
+      }
+
+      updateSheetRow('pengumuman', existing._rowIndex, {
+        judul: cleanJudul,
+        isi: cleanIsi,
+        updated_at: nowIso
+      });
+
+      return buildResponse(true, { id: editId }, 'Pengumuman berhasil diperbarui.');
+    } else {
+      const newId = getStableUUID();
+      appendSheetRow('pengumuman', {
+        id: newId,
+        judul: cleanJudul,
+        isi: cleanIsi,
+        dibuat_oleh: user.id,
+        created_at: nowIso,
+        updated_at: nowIso
+      });
+
+      return buildResponse(true, { id: newId }, 'Pengumuman baru berhasil dipublikasikan.');
+    }
+  } catch (err) {
+    return buildResponse(false, null, err.message || 'Gagal menyimpan pengumuman.');
+  } finally {
+    if (lock) {
+      try { lock.releaseLock(); } catch (e) {}
+    }
+  }
+}
+
+/**
+ * Menghapus pengumuman resmi.
+ * Otorisasi: kepala_sekolah saja.
+ *
+ * @param {string} sessionToken
+ * @param {string} pengumumanId
+ * @return {{ success: boolean, data: Object|null, message: string }}
+ */
+function apiDeletePengumuman(sessionToken, pengumumanId) {
+  let lock = null;
+  if (typeof LockService !== 'undefined') {
+    lock = LockService.getScriptLock();
+    lock.waitLock(30000);
+  }
+  try {
+    requireAuth(sessionToken, ['kepala_sekolah']);
+
+    if (!pengumumanId || typeof pengumumanId !== 'string') {
+      return buildResponse(false, null, 'ID pengumuman wajib disertakan.');
+    }
+
+    const cleanId = String(pengumumanId).trim();
+    const pData = getSheetDataBatch('pengumuman');
+    const existing = pData.rows.find(p => p.id === cleanId);
+
+    if (!existing) {
+      return buildResponse(false, null, 'Pengumuman tidak ditemukan.');
+    }
+
+    deleteSheetRow('pengumuman', existing._rowIndex);
+
+    return buildResponse(true, { id: cleanId }, 'Pengumuman berhasil dihapus.');
+  } catch (err) {
+    return buildResponse(false, null, err.message || 'Gagal menghapus pengumuman.');
+  } finally {
+    if (lock) {
+      try { lock.releaseLock(); } catch (e) {}
+    }
+  }
+}
+
+// ============================================================================
+// 9. ENTRYPOINT APLIKASI WEB (doGet)
 // ============================================================================
 
 /**
@@ -4530,6 +4869,11 @@ if (typeof module !== 'undefined' && module.exports) {
     calculateClassRanking,
     apiGetRaporDigitalKelas,
     apiGetRaporDigitalSiswa,
+    apiGetPengaturanSekolah,
+    apiSavePengaturanSekolah,
+    apiGetPengumumanList,
+    apiSavePengumuman,
+    apiDeletePengumuman,
     requireAuth,
     doGet
   };
