@@ -516,14 +516,45 @@ function destroySession_(token) {
 // ============================================================================
 
 /**
+ * Menyelesaikan instance Spreadsheet database aplikasi secara ketat.
+ * Mencegah fallback diam-diam ke active container-bound spreadsheet pada jalur Web App.
+ *
+ * @return {GoogleAppsScript.Spreadsheet.Spreadsheet}
+ */
+function getDatabaseSpreadsheet_() {
+  if (typeof getTargetSpreadsheet_ === 'function') {
+    return getTargetSpreadsheet_();
+  }
+
+  // Jika getTargetSpreadsheet_ tidak tersedia, periksa ScriptProperties secara eksplisit
+  if (typeof PropertiesService !== 'undefined') {
+    const configuredId = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+    if (configuredId && typeof configuredId === 'string' && configuredId.trim() !== '') {
+      if (typeof SpreadsheetApp !== 'undefined') {
+        return SpreadsheetApp.openById(configuredId.trim());
+      }
+    }
+  }
+
+  // Fallback hanya untuk lingkungan unit test mock Node.js lokal
+  const isNodeTestEnv = (typeof module !== 'undefined' && module.exports);
+  if (isNodeTestEnv && !(typeof global !== 'undefined' && global.MOCK_DISABLE_NODE_FALLBACK)) {
+    if (typeof SpreadsheetApp !== 'undefined' && typeof SpreadsheetApp.getActiveSpreadsheet === 'function') {
+      const mockActive = SpreadsheetApp.getActiveSpreadsheet();
+      if (mockActive) return mockActive;
+    }
+  }
+
+  throw new Error('Akses database gagal: Target SPREADSHEET_ID belum dikonfigurasi pada Script Properties.');
+}
+
+/**
  * Membaca seluruh data sheet sebagai array objek menggunakan header baris 1.
  * @param {string} sheetName
  * @return {{ headers: string[], rows: Object[], rawValues: any[][] }}
  */
 function getSheetDataBatch_(sheetName) {
-  const ss = (typeof getTargetSpreadsheet_ === 'function')
-    ? getTargetSpreadsheet_()
-    : (typeof SpreadsheetApp !== 'undefined' ? SpreadsheetApp.getActiveSpreadsheet() : null);
+  const ss = getDatabaseSpreadsheet_();
 
   if (!ss) {
     throw new Error('Spreadsheet target tidak dapat diakses.');
@@ -592,9 +623,7 @@ function getStableUUID_() {
  * @return {boolean}
  */
 function appendSheetRow_(sheetName, rowObject) {
-  const ss = (typeof getTargetSpreadsheet_ === 'function')
-    ? getTargetSpreadsheet_()
-    : (typeof SpreadsheetApp !== 'undefined' ? SpreadsheetApp.getActiveSpreadsheet() : null);
+  const ss = getDatabaseSpreadsheet_();
 
   if (!ss) throw new Error('Spreadsheet target tidak dapat diakses.');
   const sheet = ss.getSheetByName(sheetName);
@@ -626,9 +655,7 @@ function appendSheetRow_(sheetName, rowObject) {
  * @return {boolean}
  */
 function updateSheetRow_(sheetName, rowIndex, updateFields) {
-  const ss = (typeof getTargetSpreadsheet_ === 'function')
-    ? getTargetSpreadsheet_()
-    : (typeof SpreadsheetApp !== 'undefined' ? SpreadsheetApp.getActiveSpreadsheet() : null);
+  const ss = getDatabaseSpreadsheet_();
 
   if (!ss) throw new Error('Spreadsheet target tidak dapat diakses.');
   const sheet = ss.getSheetByName(sheetName);
@@ -656,9 +683,7 @@ function updateSheetRow_(sheetName, rowIndex, updateFields) {
  * @return {boolean}
  */
 function deleteSheetRow_(sheetName, rowIndex) {
-  const ss = (typeof getTargetSpreadsheet_ === 'function')
-    ? getTargetSpreadsheet_()
-    : (typeof SpreadsheetApp !== 'undefined' ? SpreadsheetApp.getActiveSpreadsheet() : null);
+  const ss = getDatabaseSpreadsheet_();
 
   if (!ss) throw new Error('Spreadsheet target tidak dapat diakses.');
   const sheet = ss.getSheetByName(sheetName);
@@ -739,9 +764,7 @@ function apiLogin(username, password) {
     // Login berhasil: hapus counter kegagalan username
     LoginThrottle_.clearFailure(cleanUsername);
 
-    const ss = (typeof getTargetSpreadsheet_ === 'function')
-      ? getTargetSpreadsheet_()
-      : (typeof SpreadsheetApp !== 'undefined' ? SpreadsheetApp.getActiveSpreadsheet() : null);
+    const ss = getDatabaseSpreadsheet_();
 
     const nowIso = new Date().toISOString();
 
@@ -5057,6 +5080,8 @@ if (typeof module !== 'undefined' && module.exports) {
     buildResponse_,
     resolveWaliKelasScope: resolveWaliKelasScope_,
     resolveWaliKelasScope_,
+    getDatabaseSpreadsheet: getDatabaseSpreadsheet_,
+    getDatabaseSpreadsheet_,
     resolvePredikatScore: resolvePredikatScore_,
     resolvePredikatScore_,
     calculateClassRanking: calculateClassRanking_,

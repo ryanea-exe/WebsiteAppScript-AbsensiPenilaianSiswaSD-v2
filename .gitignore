@@ -1,0 +1,8 @@
+# Target Konfigurasi Produksi Lokal (Kerahasiaan Target Produksi)
+.clasp.prod.json
+.clasp.prod.json.local
+
+# Dependency & Log Files
+node_modules/
+*.log
+.DS_Store

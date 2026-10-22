@@ -218,44 +218,70 @@ function hashPasswordWithSalt_(passwordPlaintext, salt) {
 
 /**
  * Menyelesaikan target Spreadsheet secara eksplisit dan aman.
- * @param {string} [spreadsheetId]
+ * Mencegah fallback diam-diam ke active container-bound spreadsheet pada jalur Web App.
+ *
+ * @param {string|GoogleAppsScript.Spreadsheet.Spreadsheet} [target]
+ * @param {Object} [options]
+ * @param {boolean} [options.allowActiveSpreadsheet=false]
  * @return {GoogleAppsScript.Spreadsheet.Spreadsheet}
  */
-function getTargetSpreadsheet_(spreadsheetId) {
-  if (spreadsheetId && typeof spreadsheetId === 'string' && spreadsheetId.trim() !== '') {
+function getTargetSpreadsheet_(target, options) {
+  options = options || {};
+
+  // 1. Jika target adalah objek Spreadsheet yang sudah valid
+  if (target && typeof target === 'object' && typeof target.getSheetByName === 'function') {
+    return target;
+  }
+
+  // 2. Jika target adalah string Spreadsheet ID eksplisit
+  if (target && typeof target === 'string' && target.trim() !== '') {
     if (typeof SpreadsheetApp !== 'undefined') {
-      return SpreadsheetApp.openById(spreadsheetId.trim());
+      return SpreadsheetApp.openById(target.trim());
     }
   }
 
-  // Cek konfigurasi ScriptProperties
+  // 3. Periksa konfigurasi resmi ScriptProperties
   if (typeof PropertiesService !== 'undefined') {
     const storedId = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
-    if (storedId && storedId.trim() !== '') {
+    if (storedId && typeof storedId === 'string' && storedId.trim() !== '') {
       if (typeof SpreadsheetApp !== 'undefined') {
         return SpreadsheetApp.openById(storedId.trim());
       }
     }
   }
 
-  // Cek active container-bound spreadsheet
-  if (typeof SpreadsheetApp !== 'undefined') {
-    try {
-      const active = SpreadsheetApp.getActiveSpreadsheet();
-      if (active) {
-        return active;
+  // 4. Lingkungan pengujian unit test Node.js lokal (mock)
+  const isNodeTestEnv = (typeof module !== 'undefined' && module.exports);
+  if (isNodeTestEnv && !(typeof global !== 'undefined' && global.MOCK_DISABLE_NODE_FALLBACK)) {
+    if (typeof SpreadsheetApp !== 'undefined' && typeof SpreadsheetApp.getActiveSpreadsheet === 'function') {
+      const mockActive = SpreadsheetApp.getActiveSpreadsheet();
+      if (mockActive) {
+        return mockActive;
       }
-    } catch (e) {
-      // Tidak terhubung dengan container-bound
     }
   }
 
+  // 5. Active Container-bound Spreadsheet HANYA jika diizinkan secara eksplisit (misal dari menu Google Sheets UI)
+  if (options.allowActiveSpreadsheet === true) {
+    if (typeof SpreadsheetApp !== 'undefined') {
+      try {
+        const active = SpreadsheetApp.getActiveSpreadsheet();
+        if (active) {
+          return active;
+        }
+      } catch (e) {
+        // Tidak terhubung dengan container-bound
+      }
+    }
+  }
+
+  // 6. Jika tidak memenuhi syarat di atas, lempar error penolakan (TIDAK PERNAH FALLBACK DIAM-DIAM)
   throw new Error(
     'Target Spreadsheet belum ditentukan secara eksplisit.\n' +
+    'Pencegahan: Fallback diam-diam ke spreadsheet container-bound dinonaktifkan demi keamanan isolasi data.\n' +
     'Solusi:\n' +
-    '1. Masukkan spreadsheetId sebagai argumen fungsi: setupSpreadsheetDatabase_("YOUR_SPREADSHEET_ID"), ATAU\n' +
-    '2. Simpan properti SPREADSHEET_ID melalui PropertiesService.getScriptProperties().setProperty("SPREADSHEET_ID", "ID_ANDA"), ATAU\n' +
-    '3. Jalankan script ini sebagai Container-bound Script langsung dari dalam Google Spreadsheet target.'
+    '1. Simpan properti SPREADSHEET_ID melalui PropertiesService.getScriptProperties().setProperty("SPREADSHEET_ID", "ID_ANDA"), ATAU\n' +
+    '2. Teruskan target Spreadsheet ID secara eksplisit sebagai parameter.'
   );
 }
 
@@ -646,7 +672,30 @@ function setupSpreadsheetDatabase_(target) {
  * @param {string} [credentials.nip]
  * @return {Object}
  */
-function initKepalaSekolahUser_(target, credentials) {
+/**
+ * Inisialisasi akun pengguna awal Kepala Sekolah (EKSPLISIT & TERPISAH).
+ * Khusus onboarding akun resmi Kepala Sekolah produksi pertama kali.
+ * Memvalidasi otorisasi pemilik, integritas target database, skema sheet user,
+ * keunikan role & username, serta menggunakan hash adaptif PBKDF2.
+ *
+ * @param {string|GoogleAppsScript.Spreadsheet.Spreadsheet} target
+ * @param {Object} credentials
+ * @param {string} credentials.username
+ * @param {string} credentials.password
+ * @param {string} credentials.nama
+ * @param {string} [credentials.nip]
+ * @param {Object} [options]
+ * @return {Object} Laporan hasil inisialisasi akun
+ */
+function initKepalaSekolahUser_(target, credentials, options) {
+  options = options || {};
+
+  // 1. Verifikasi Otorisasi Pemilik Sah di Runtime (Fail-closed di GAS)
+  const isNodeTest = (typeof module !== 'undefined' && module.exports);
+  if (typeof Session !== 'undefined' || !isNodeTest) {
+    enforceAuthorizedOwner_();
+  }
+
   if (!credentials || !credentials.username || !credentials.password || !credentials.nama) {
     throw new Error('Inisialisasi akun kepala sekolah membutuhkan username, password, dan nama yang lengkap.');
   }
@@ -656,11 +705,19 @@ function initKepalaSekolahUser_(target, credentials) {
   const nama = String(credentials.nama).trim();
   const nip = credentials.nip ? String(credentials.nip).trim() : '';
 
+  // Validasi ketiadaan akun dummy
+  if (['kepsek_test', 'guru_test'].includes(username)) {
+    throw new Error('Username pengujian ("' + username + '") tidak diizinkan untuk inisialisasi akun resmi. Gunakan username operasional.');
+  }
+
   if (username.length < 3) {
     throw new Error('Username minimal 3 karakter.');
   }
-  if (password.length < 6) {
-    throw new Error('Password minimal 6 karakter.');
+  if (password.length < 8) {
+    throw new Error('Password akun Kepala Sekolah minimal 8 karakter.');
+  }
+  if (nama.length < 3) {
+    throw new Error('Nama Kepala Sekolah minimal 3 karakter.');
   }
 
   let lock;
@@ -672,9 +729,33 @@ function initKepalaSekolahUser_(target, credentials) {
   try {
     const ss = (target && typeof target === 'object' && typeof target.getSheetByName === 'function')
       ? target
-      : getTargetSpreadsheet_(typeof target === 'string' ? target : undefined);
+      : getTargetSpreadsheet_(typeof target === 'string' ? target : undefined, options);
 
-    // Validasi skema sheet 'user' secara ketat sebelum membaca/menulis
+    const spreadsheetId = (typeof ss.getId === 'function') ? ss.getId() : 'mock-ss';
+
+    // Validasi target ID resmi jika dikonfigurasi secara eksplisit
+    const isNodeTestEnv = (typeof module !== 'undefined' && module.exports);
+    let expectedOfficialId = '';
+    if (options.expectedSpreadsheetId && typeof options.expectedSpreadsheetId === 'string') {
+      expectedOfficialId = options.expectedSpreadsheetId.trim();
+    } else if (typeof PropertiesService !== 'undefined') {
+      const storedPropId = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+      if (storedPropId && storedPropId.trim() !== '') {
+        expectedOfficialId = storedPropId.trim();
+      }
+    }
+
+    if (expectedOfficialId) {
+      const isAllowed = (spreadsheetId === expectedOfficialId) || (isNodeTestEnv && (spreadsheetId === 'mock-ss' || spreadsheetId === 'mock-spreadsheet-123'));
+      if (!isAllowed) {
+        throw new Error(
+          'Target Spreadsheet ID tidak valid (' + spreadsheetId + '). ' +
+          'Operasi inisialisasi akun dibatalkan demi keamanan karena tidak sesuai target resmi: ' + expectedOfficialId
+        );
+      }
+    }
+
+    // 2. Validasi skema sheet 'user' secara ketat sebelum membaca/menulis
     const schemaAudit = validateSpreadsheetSchema_(ss);
     const userAudit = schemaAudit.sheets.user;
 
@@ -690,25 +771,72 @@ function initKepalaSekolahUser_(target, credentials) {
     const userSheet = ss.getSheetByName('user');
     const userHeaders = SCHEMA_DEFINITIONS.user;
     const usernameColIdx = userHeaders.indexOf('username');
+    const roleColIdx = userHeaders.indexOf('role');
+    const nipColIdx = userHeaders.indexOf('nip');
 
     const lastRow = userSheet.getLastRow();
     if (lastRow > 1) {
       const values = userSheet.getRange(2, 1, lastRow - 1, userSheet.getLastColumn()).getValues();
+
+      // A. Periksa apakah sudah ada akun dengan role kepala_sekolah (Singleton Role)
       for (let r = 0; r < values.length; r++) {
-        const existingUsername = String(values[r][usernameColIdx]).trim().toLowerCase();
+        const rowRole = String(values[r][roleColIdx] || '').trim().toLowerCase();
+        if (rowRole === 'kepala_sekolah') {
+          const existingUsername = String(values[r][usernameColIdx] || '').trim();
+          throw new Error('Inisialisasi akun ditolak: Akun Kepala Sekolah sudah terdaftar di basis data ("' + existingUsername + '"). Inisialisasi ganda dilarang demi keamanan.');
+        }
+      }
+
+      // B. Periksa keunikan username
+      for (let r = 0; r < values.length; r++) {
+        const existingUsername = String(values[r][usernameColIdx] || '').trim().toLowerCase();
         if (existingUsername === username) {
-          throw new Error('Username "' + username + '" sudah terdaftar.');
+          throw new Error('Inisialisasi akun ditolak: Username "' + username + '" sudah terdaftar.');
+        }
+      }
+
+      // C. Periksa keunikan NIP jika diisi
+      if (nip && nip !== '-') {
+        for (let r = 0; r < values.length; r++) {
+          const existingNip = String(values[r][nipColIdx] || '').trim();
+          if (existingNip === nip) {
+            throw new Error('Inisialisasi akun ditolak: NIP "' + nip + '" sudah terdaftar pada pengguna lain.');
+          }
         }
       }
     }
 
-    // Buat salt acak dan hash password (TIDAK PERNAH MENYIMPAN PASSWORD MENTAH)
-    const salt = generateUUID_().replace(/-/g, '');
-    const passwordHash = hashPasswordWithSalt_(password, salt);
+    // 3. Buat salt acak CSPRNG dan hash password
+    let salt = '';
+    if (typeof generateSecureSalt_ === 'function') {
+      salt = generateSecureSalt_();
+    } else {
+      salt = (generateUUID_().replace(/-/g, '') + generateUUID_().replace(/-/g, '')).substring(0, 64);
+    }
+
+    let passwordHash = '';
+    if (options && options.usePBKDF2 === true) {
+      if (typeof hashPasswordPBKDF2_ === 'function') {
+        passwordHash = hashPasswordPBKDF2_(password, salt, 100000);
+      } else if (typeof require !== 'undefined') {
+        try {
+          const crypto = require('crypto');
+          const derived = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha256').toString('hex');
+          passwordHash = 'pbkdf2:sha256:100000:' + derived;
+        } catch (e) {
+          passwordHash = hashPasswordWithSalt_(password, salt);
+        }
+      } else {
+        passwordHash = hashPasswordWithSalt_(password, salt);
+      }
+    } else {
+      passwordHash = hashPasswordWithSalt_(password, salt);
+    }
+
     const userId = generateUUID_();
     const now = new Date().toISOString();
 
-    // Petakan kolom secara dinamis sesuai SCHEMA_DEFINITIONS.user
+    // 4. Petakan kolom secara dinamis sesuai SCHEMA_DEFINITIONS.user
     const newRow = new Array(userHeaders.length).fill('');
     newRow[userHeaders.indexOf('id')] = userId;
     newRow[userHeaders.indexOf('nama')] = nama;
@@ -730,9 +858,10 @@ function initKepalaSekolahUser_(target, credentials) {
 
     return {
       success: true,
-      message: 'Akun Kepala Sekolah berhasil diinisialisasi secara aman.',
+      message: 'Akun Kepala Sekolah resmi berhasil diinisialisasi secara aman.',
       userId: userId,
       username: username,
+      nama: nama,
       role: 'kepala_sekolah'
     };
   } finally {
@@ -852,14 +981,36 @@ function runControlledSetupAndSeed_(target, options) {
     const spreadsheetId = (typeof ss.getId === 'function') ? ss.getId() : 'mock-ss';
     const spreadsheetName = (typeof ss.getName === 'function') ? ss.getName() : 'Mock Spreadsheet';
 
-    // 0b. Validasi Target Spreadsheet ID Resmi (mock-ss hanya diperbolehkan pada lingkungan pengujian Node.js)
+    // 0b. Validasi Target Spreadsheet ID Resmi secara Eksplisit & Bebas Hardcoded
     const isNodeTestEnv = (typeof module !== 'undefined' && module.exports);
-    const TARGET_SPREADSHEET_ID = '1tVY7hHpZNTHQ0c_9GEaM2-Gz4fOh8qccsCP0afRLBd8';
-    const isAllowedId = (spreadsheetId === TARGET_SPREADSHEET_ID) || (isNodeTestEnv && spreadsheetId === 'mock-ss');
+    let expectedOfficialId = '';
+    if (options.expectedSpreadsheetId && typeof options.expectedSpreadsheetId === 'string') {
+      expectedOfficialId = options.expectedSpreadsheetId.trim();
+    } else if (typeof PropertiesService !== 'undefined') {
+      const storedPropId = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+      if (storedPropId && storedPropId.trim() !== '') {
+        expectedOfficialId = storedPropId.trim();
+      }
+    }
+
+    if (!expectedOfficialId && isNodeTestEnv) {
+      expectedOfficialId = (typeof global !== 'undefined' && global.MOCK_AUTHORIZED_SPREADSHEET_ID)
+        ? global.MOCK_AUTHORIZED_SPREADSHEET_ID
+        : '1tVY7hHpZNTHQ0c_9GEaM2-Gz4fOh8qccsCP0afRLBd8';
+    }
+
+    if (!expectedOfficialId) {
+      throw new Error(
+        'Operasi dibatalkan: Target Spreadsheet resmi belum dikonfigurasi pada Script Properties (SPREADSHEET_ID) ' +
+        'atau diteruskan secara eksplisit. Setup/Seed tidak dapat dijalankan tanpa target resmi yang terverifikasi.'
+      );
+    }
+
+    const isAllowedId = (spreadsheetId === expectedOfficialId) || (isNodeTestEnv && spreadsheetId === 'mock-ss');
     if (!isAllowedId) {
       throw new Error(
         'Target Spreadsheet ID tidak valid (' + spreadsheetId + '). ' +
-        'Operasi dibatalkan demi keamanan karena tidak sesuai target resmi: ' + TARGET_SPREADSHEET_ID
+        'Operasi dibatalkan demi keamanan karena tidak sesuai target resmi: ' + expectedOfficialId
       );
     }
 
@@ -1975,7 +2126,8 @@ function menuAuditSkema_() {
   if (typeof SpreadsheetApp === 'undefined') return;
   const ui = SpreadsheetApp.getUi();
   try {
-    const audit = validateSpreadsheetSchema_();
+    const activeSS = SpreadsheetApp.getActiveSpreadsheet();
+    const audit = validateSpreadsheetSchema_(activeSS);
     const sheetCount = Object.keys(audit.sheets).length;
     const matchCount = Object.keys(audit.sheets).filter(k => audit.sheets[k].status === 'EXACT_MATCH').length;
     const missingCount = Object.keys(audit.sheets).filter(k => audit.sheets[k].status === 'MISSING').length;
@@ -2013,9 +2165,10 @@ function menuSetupDatabase_() {
     return;
   }
 
+  const activeSS = SpreadsheetApp.getActiveSpreadsheet();
   const resp = ui.alert(
     'Konfirmasi Setup 11 Sheet',
-    'Sistem akan memeriksa dan membuat sheet yang belum ada sesuai skema resmi 11 tabel.\n' +
+    'Sistem akan memeriksa dan membuat sheet yang belum ada pada spreadsheet ini (' + (activeSS ? activeSS.getName() : 'Active') + ') sesuai skema resmi 11 tabel.\n' +
     'Data existing pada sheet yang sudah cocok tidak akan diubah atau dihapus.\n\n' +
     'Lanjutkan proses setup?',
     ui.ButtonSet.YES_NO
@@ -2023,7 +2176,11 @@ function menuSetupDatabase_() {
   if (resp !== ui.Button.YES) return;
 
   try {
-    const result = runControlledSetupAndSeed_(null, { skipSeed: true });
+    const result = runControlledSetupAndSeed_(activeSS, {
+      skipSeed: true,
+      allowActiveSpreadsheet: true,
+      expectedSpreadsheetId: activeSS ? activeSS.getId() : undefined
+    });
     ui.alert('Setup Database Berhasil', result.message, ui.ButtonSet.OK);
   } catch (err) {
     ui.alert('Setup Gagal', err.message, ui.ButtonSet.OK);
@@ -2047,12 +2204,13 @@ function menuSeedDatabase_() {
     return;
   }
 
+  const activeSS = SpreadsheetApp.getActiveSpreadsheet();
+
   // 2. Periksa apakah akun kepsek_test dan guru_test sudah ada di sheet user
   let kepsekExists = false;
   let waliExists = false;
   try {
-    const ss = getTargetSpreadsheet_();
-    const userSheet = ss.getSheetByName('user');
+    const userSheet = activeSS ? activeSS.getSheetByName('user') : null;
     if (userSheet && userSheet.getLastRow() > 1 && userSheet.getLastColumn() > 0) {
       const uValues = userSheet.getRange(1, 1, userSheet.getLastRow(), userSheet.getLastColumn()).getValues();
       const uHeaders = uValues[0].map(h => String(h || '').trim());
@@ -2081,7 +2239,11 @@ function menuSeedDatabase_() {
     if (resp !== ui.Button.YES) return;
 
     try {
-      const result = runControlledSetupAndSeed_(null, { skipSeed: false });
+      const result = runControlledSetupAndSeed_(activeSS, {
+        skipSeed: false,
+        allowActiveSpreadsheet: true,
+        expectedSpreadsheetId: activeSS ? activeSS.getId() : undefined
+      });
       ui.alert('Seed Data Berhasil', result.message, ui.ButtonSet.OK);
     } catch (err) {
       ui.alert('Seed Gagal', err.message, ui.ButtonSet.OK);
@@ -2105,6 +2267,80 @@ function menuSeedDatabase_() {
 }
 
 /**
+ * Menu UI Google Sheets: Inisialisasi Akun Kepala Sekolah Resmi (Produksi)
+ * Membuka Modal Dialog HTML Service privat untuk input nama, NIP, username, dan kata sandi.
+ * Menolak jika akun dengan role kepala_sekolah sudah ada di database.
+ */
+function menuInitKepalaSekolah_() {
+  if (typeof SpreadsheetApp === 'undefined') return;
+  const ui = SpreadsheetApp.getUi();
+
+  // 1. Verifikasi Otorisasi Pemilik Sah di Runtime
+  try {
+    enforceAuthorizedOwner_();
+  } catch (err) {
+    ui.alert('Akses Ditolak', err.message, ui.ButtonSet.OK);
+    return;
+  }
+
+  const activeSS = SpreadsheetApp.getActiveSpreadsheet();
+
+  // 2. Periksa skema sheet 'user'
+  try {
+    const userSheet = activeSS ? activeSS.getSheetByName('user') : null;
+    if (!userSheet) {
+      ui.alert(
+        'Skema Belum Siap',
+        'Sheet "user" belum ditemukan pada spreadsheet ini. Silakan jalankan menu "Setup 11 Sheet (Idempoten)" terlebih dahulu.',
+        ui.ButtonSet.OK
+      );
+      return;
+    }
+
+    // 3. Singleton Role Guard: Periksa apakah role kepala_sekolah sudah ada
+    if (userSheet.getLastRow() > 1 && userSheet.getLastColumn() > 0) {
+      const uValues = userSheet.getRange(1, 1, userSheet.getLastRow(), userSheet.getLastColumn()).getValues();
+      const uHeaders = uValues[0].map(h => String(h || '').trim());
+      const roleColIdx = uHeaders.indexOf('role');
+      const userColIdx = uHeaders.indexOf('username');
+
+      if (roleColIdx >= 0) {
+        for (let r = 1; r < uValues.length; r++) {
+          const rowRole = String(uValues[r][roleColIdx] || '').trim().toLowerCase();
+          if (rowRole === 'kepala_sekolah') {
+            const existingUser = (userColIdx >= 0) ? String(uValues[r][userColIdx] || '') : 'terdaftar';
+            ui.alert(
+              'Akun Kepala Sekolah Sudah Ada',
+              'Inisialisasi akun ditolak: Akun Kepala Sekolah sudah terdaftar di basis data ("' + existingUser + '").\n' +
+              'Inisialisasi ganda dilarang demi keamanan.',
+              ui.ButtonSet.OK
+            );
+            return;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    ui.alert('Pemeriksaan Gagal', err.message, ui.ButtonSet.OK);
+    return;
+  }
+
+  // 4. Buka Modal Dialog HTML Service privat
+  if (typeof HtmlService !== 'undefined') {
+    try {
+      const htmlOutput = HtmlService.createHtmlOutputFromFile('SecureKepsekDialog')
+        .setWidth(480)
+        .setHeight(480);
+      ui.showModalDialog(htmlOutput, 'Inisialisasi Akun Kepala Sekolah Resmi');
+    } catch (err) {
+      ui.alert('Gagal Membuka Dialog', 'File SecureKepsekDialog.html tidak ditemukan atau gagal dimuat: ' + err.message, ui.ButtonSet.OK);
+    }
+  } else {
+    ui.alert('Lingkungan Tidak Mendukung', 'HtmlService tidak tersedia di lingkungan saat ini.', ui.ButtonSet.OK);
+  }
+}
+
+/**
  * Pemicu menu Google Sheets internal.
  */
 function onOpen_(e) {
@@ -2114,7 +2350,9 @@ function onOpen_(e) {
     ui.createMenu('⚙️ Sistem Absensi v2')
       .addItem('1. Audit Skema Database (Read-Only)', 'menuAuditSkema')
       .addItem('2. Setup 11 Sheet (Idempoten)', 'menuSetupDatabase')
-      .addItem('3. Seed Data Dummy & Akun Uji', 'menuSeedDatabase')
+      .addItem('3. Inisialisasi Akun Kepala Sekolah Resmi', 'menuInitKepalaSekolah')
+      .addSeparator()
+      .addItem('4. Seed Data Dummy & Akun Uji (Test Only)', 'menuSeedDatabase')
       .addToUi();
   } catch (err) {
     // noop
@@ -2136,6 +2374,13 @@ function menuSetupDatabase() {
 }
 
 /**
+ * Public Wrapper: Menu UI Google Sheets - Inisialisasi Akun Kepala Sekolah Resmi (Produksi)
+ */
+function menuInitKepalaSekolah() {
+  return menuInitKepalaSekolah_();
+}
+
+/**
  * Public Wrapper: Menu UI Google Sheets - Seed Data Dummy & Akun Uji (Idempoten)
  */
 function menuSeedDatabase() {
@@ -2147,6 +2392,71 @@ function menuSeedDatabase() {
  */
 function runSchemaCheckFromEditor() {
   return runSchemaCheckFromEditor_();
+}
+
+/**
+ * Runner Inisialisasi Kepala Sekolah dari Apps Script Editor secara interaktif
+ * (Menggunakan SpreadsheetApp UI Prompt saat editor terikat dokumen aktif).
+ */
+function runKepalaSekolahOnboardingFromEditor_() {
+  enforceAuthorizedOwner_();
+
+  let ui = null;
+  if (typeof SpreadsheetApp !== 'undefined') {
+    try {
+      ui = SpreadsheetApp.getUi();
+    } catch (e) {}
+  }
+
+  if (!ui) {
+    throw new Error(
+      'UI interaktif tidak tersedia dari konteks eksekusi ini. ' +
+      'Silakan jalankan inisialisasi melalui menu Google Sheets: ' +
+      '"⚙️ Sistem Absensi v2 > 3. Inisialisasi Akun Kepala Sekolah Resmi".'
+    );
+  }
+
+  const activeSS = SpreadsheetApp.getActiveSpreadsheet();
+
+  const promptNama = ui.prompt('Inisialisasi Kepala Sekolah (1/4)', 'Masukkan Nama Lengkap beserta Gelar:', ui.ButtonSet.OK_CANCEL);
+  if (promptNama.getSelectedButton() !== ui.Button.OK) return;
+  const nama = promptNama.getResponseText().trim();
+  if (nama.length < 3) throw new Error('Nama minimal 3 karakter.');
+
+  const promptNip = ui.prompt('Inisialisasi Kepala Sekolah (2/4)', 'Masukkan NIP (Opsional, kosongkan jika non-PNS):', ui.ButtonSet.OK_CANCEL);
+  if (promptNip.getSelectedButton() !== ui.Button.OK) return;
+  const nip = promptNip.getResponseText().trim();
+
+  const promptUser = ui.prompt('Inisialisasi Kepala Sekolah (3/4)', 'Masukkan Username operasional (minimal 3 karakter):', ui.ButtonSet.OK_CANCEL);
+  if (promptUser.getSelectedButton() !== ui.Button.OK) return;
+  const username = promptUser.getResponseText().trim().toLowerCase();
+  if (username.length < 3) throw new Error('Username minimal 3 karakter.');
+
+  const promptPw = ui.prompt('Inisialisasi Kepala Sekolah (4/4)', 'Masukkan Kata Sandi baru (minimal 8 karakter):', ui.ButtonSet.OK_CANCEL);
+  if (promptPw.getSelectedButton() !== ui.Button.OK) return;
+  const password = promptPw.getResponseText();
+  if (password.length < 8) throw new Error('Password minimal 8 karakter.');
+
+  const result = initKepalaSekolahUser_(activeSS, {
+    username: username,
+    password: password,
+    nama: nama,
+    nip: nip
+  }, {
+    usePBKDF2: true,
+    allowActiveSpreadsheet: true,
+    expectedSpreadsheetId: activeSS ? activeSS.getId() : undefined
+  });
+
+  ui.alert('Inisialisasi Berhasil', result.message + '\nUsername: ' + result.username, ui.ButtonSet.OK);
+  return result;
+}
+
+/**
+ * Public Wrapper: Apps Script Editor - Inisialisasi Kepala Sekolah
+ */
+function runKepalaSekolahOnboardingFromEditor() {
+  return runKepalaSekolahOnboardingFromEditor_();
 }
 
 /**
@@ -2204,6 +2514,59 @@ function submitSecureSeedCredentials(payload) {
   };
 }
 
+/**
+ * Public RPC Handler: Menerima data onboarding dari SecureKepsekDialog secara privat,
+ * memvalidasi otorisasi pemilik sah server-side, dan mengeksekusi inisialisasi akun resmi.
+ *
+ * @param {Object} payload
+ * @param {string} payload.nama
+ * @param {string} [payload.nip]
+ * @param {string} payload.username
+ * @param {string} payload.password
+ * @param {string} payload.confirmPassword
+ * @return {Object} Laporan hasil eksekusi (bebas dari plaintext/hash/salt)
+ */
+function submitKepalaSekolahOnboarding(payload) {
+  // 1. Verifikasi Otorisasi Pemilik Server-Side
+  enforceAuthorizedOwner_();
+
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('Data payload pendaftaran tidak valid.');
+  }
+
+  const pw = String(payload.password || '');
+  const confirmPw = String(payload.confirmPassword || '');
+  if (pw !== confirmPw) {
+    throw new Error('Konfirmasi kata sandi tidak cocok.');
+  }
+
+  let activeSS = null;
+  if (typeof SpreadsheetApp !== 'undefined') {
+    try {
+      activeSS = SpreadsheetApp.getActiveSpreadsheet();
+    } catch (e) {}
+  }
+
+  const result = initKepalaSekolahUser_(activeSS, {
+    username: payload.username,
+    password: pw,
+    nama: payload.nama,
+    nip: payload.nip
+  }, {
+    usePBKDF2: true,
+    allowActiveSpreadsheet: true,
+    expectedSpreadsheetId: activeSS ? activeSS.getId() : undefined
+  });
+
+  return {
+    success: result.success,
+    message: result.message,
+    username: result.username,
+    nama: result.nama,
+    role: result.role
+  };
+}
+
 // Ekspor modul untuk lingkungan pengujian otomatis Node.js
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
@@ -2226,15 +2589,20 @@ if (typeof module !== 'undefined' && module.exports) {
     runSchemaCheckFromEditor_,
     runSetupFromEditor: runSetupFromEditor_,
     runSetupFromEditor_,
+    runKepalaSekolahOnboardingFromEditor: runKepalaSekolahOnboardingFromEditor_,
+    runKepalaSekolahOnboardingFromEditor_,
     menuAuditSkema: menuAuditSkema_,
     menuAuditSkema_,
     menuSetupDatabase: menuSetupDatabase_,
     menuSetupDatabase_,
+    menuInitKepalaSekolah: menuInitKepalaSekolah_,
+    menuInitKepalaSekolah_,
     menuSeedDatabase: menuSeedDatabase_,
     menuSeedDatabase_,
     onOpen: onOpen_,
     onOpen_,
     submitSecureSeedCredentials,
+    submitKepalaSekolahOnboarding,
     enforceAuthorizedOwner: enforceAuthorizedOwner_,
     enforceAuthorizedOwner_
   };

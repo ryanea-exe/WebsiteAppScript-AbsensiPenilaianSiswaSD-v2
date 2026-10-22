@@ -38,9 +38,12 @@ const ALLOWED_SETUP_PUBLIC_WRAPPERS = new Set([
   'onOpen',
   'menuAuditSkema',
   'menuSetupDatabase',
+  'menuInitKepalaSekolah',
   'menuSeedDatabase',
   'runSchemaCheckFromEditor',
-  'submitSecureSeedCredentials'
+  'runKepalaSekolahOnboardingFromEditor',
+  'submitSecureSeedCredentials',
+  'submitKepalaSekolahOnboarding'
 ]);
 const invalidPublicSetup = setupFuncMatches.filter(fn => !fn.endsWith('_') && !ALLOWED_SETUP_PUBLIC_WRAPPERS.has(fn));
 assert.strictEqual(invalidPublicSetup.length, 0, `Ditemukan fungsi publik tidak sah di setup.gs: ${invalidPublicSetup.join(', ')}`);

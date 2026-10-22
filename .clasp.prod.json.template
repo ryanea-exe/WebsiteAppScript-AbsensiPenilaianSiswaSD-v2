@@ -1,0 +1,17 @@
+{
+  "scriptId": "REPLACE_WITH_PRODUCTION_APPS_SCRIPT_ID",
+  "rootDir": "",
+  "parentId": "REPLACE_WITH_PRODUCTION_SPREADSHEET_ID_IF_BOUND",
+  "scriptExtensions": [
+    ".js",
+    ".gs"
+  ],
+  "htmlExtensions": [
+    ".html"
+  ],
+  "jsonExtensions": [
+    ".json"
+  ],
+  "filePushOrder": [],
+  "skipSubdirectories": false
+}

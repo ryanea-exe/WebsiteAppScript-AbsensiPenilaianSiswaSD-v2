@@ -1,6 +1,11 @@
 .git/**
 .docs/**
+docs/**
 tests/**
+scripts/**
 .chatgpt.md
 README.txt
 benchmark_diagnostic.gs
+.clasp.test.json
+.clasp.prod.json*
+.gitignore
